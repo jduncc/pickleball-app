@@ -105,7 +105,33 @@ explicitly signed into your tailnet can reach it.
 Tailscale — use it on the local WiFi only, and just use Tailscale yourself
 for checking standings remotely, that works too; both can be true at once.)*
 
-## 6. Updating later
+## 6. Admin: backups and reset
+
+Open `http://<vm-ip>:3000/admin` (or the Tailscale equivalent) for a small
+admin page with two things:
+
+- **Download database** — exports the raw SQLite file (live session + all
+  archived history) as a backup.
+- **Reset database** — permanently wipes everything (live session and all
+  archived history) for everyone connected. Requires typing `RESET` to enable
+  the button plus a confirmation dialog, since it can't be undone.
+
+By default this route has no login. To protect it with a shared token:
+
+```bash
+cp .env.example .env
+# edit .env and set ADMIN_TOKEN to something private
+docker compose up -d --build
+```
+
+Once set, `/admin` will ask for that token before allowing a download or
+reset (enter it once in the page — it's remembered for that browser tab via
+session storage). If you don't set `ADMIN_TOKEN`, the server logs a warning
+on startup and the route is left open — fine if this box is only reachable
+over your home LAN/tailnet and you trust everyone on it, but worth locking
+down if you're at all unsure who can reach port 3000.
+
+## 7. Updating later
 
 ```bash
 cd ~/pickleball-app
@@ -115,7 +141,7 @@ docker compose up -d --build
 
 Your data isn't touched by rebuilds — it lives in the named volume.
 
-## 7. Notes
+## 8. Notes
 
 - **No authentication.** Anyone with network access (LAN or your tailnet) can
   view and edit the live session. Fine for household/friend use; if you want
@@ -126,5 +152,5 @@ Your data isn't touched by rebuilds — it lives in the named volume.
   support (several concurrent round robins) isn't built, but the server
   architecture would support adding it later if you ever run simultaneous
   sessions on different court sets.
-- **Backups**: the SQLite file lives inside the `pickleball-data` Docker
-  volume. To back it up: `docker compose exec pickleball cat /app/data/pickleball.db > backup.db`.
+- **Backups**: easiest is the Download button on `/admin`. If you'd rather
+  do it from the command line: `docker compose exec pickleball cat /app/data/pickleball.db > backup.db`.

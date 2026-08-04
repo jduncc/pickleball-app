@@ -12,7 +12,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new Database(path.join(DATA_DIR, "pickleball.db"));
+const DB_PATH = path.join(DATA_DIR, "pickleball.db");
+const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS current_state (
@@ -54,14 +55,78 @@ function getHistory() {
     .map((r) => ({ id: r.id, endedAt: r.ended_at, mode: r.mode, state: JSON.parse(r.data) }));
 }
 
+function resetDatabase() {
+  db.exec("DELETE FROM current_state; DELETE FROM session_history;");
+  state = { ...initialState };
+  persistState(state);
+  io.emit("state", state);
+  io.emit("history", []);
+}
+
 let state = loadState();
 
 const app = express();
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
+
+/* ------------------------------ Admin ------------------------------- */
+// Optional shared-secret protection. Set ADMIN_TOKEN in the environment to
+// require it; if unset, the admin route is left open (fine on a private
+// LAN/tailnet, but you should set a token if this box is reachable more
+// broadly).
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+if (!ADMIN_TOKEN) {
+  console.warn("[admin] ADMIN_TOKEN is not set — /admin is unprotected. Set ADMIN_TOKEN to require a token.");
+}
+
+function requireAdmin(req, res, next) {
+  if (!ADMIN_TOKEN) return next();
+  const supplied = req.get("x-admin-token") || req.query.token || "";
+  if (supplied === ADMIN_TOKEN) return next();
+  return res.status(401).json({ error: "Invalid or missing admin token" });
+}
+
+app.use("/admin", express.static(path.join(__dirname, "admin")));
+
+app.get("/admin/api/status", requireAdmin, (req, res) => {
+  let dbSizeBytes = 0;
+  try { dbSizeBytes = fs.statSync(DB_PATH).size; } catch { /* ignore */ }
+  const historyCount = db.prepare("SELECT COUNT(*) AS c FROM session_history").get().c;
+  res.json({
+    ok: true,
+    tokenRequired: Boolean(ADMIN_TOKEN),
+    dbSizeBytes,
+    phase: state.phase,
+    mode: state.mode,
+    activeUnitCount: Object.keys(state.units).length,
+    gamesInCurrentSession: state.log.length,
+    archivedSessions: historyCount,
+  });
+});
+
+app.get("/admin/api/db", requireAdmin, (req, res) => {
+  try {
+    db.pragma("wal_checkpoint(FULL)"); // flush WAL so the file on disk is complete
+  } catch (err) {
+    console.error("WAL checkpoint failed before export", err);
+  }
+  const dateStr = new Date().toISOString().slice(0, 10);
+  res.download(DB_PATH, `pickleball-backup-${dateStr}.db`);
+});
+
+app.post("/admin/api/reset", requireAdmin, (req, res) => {
+  try {
+    resetDatabase();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Reset failed", err);
+    res.status(500).json({ error: "Reset failed" });
+  }
+});
 
 io.on("connection", (socket) => {
   socket.emit("state", state);

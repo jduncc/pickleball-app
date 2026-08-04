@@ -4,6 +4,8 @@ services:
     container_name: pickleball-round-robin
     ports:
       - "3000:3000"
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
     volumes:
       - pickleball-data:/app/data
     restart: unless-stopped
