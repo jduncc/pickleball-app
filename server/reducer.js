@@ -138,6 +138,26 @@ export function reducer(state, action) {
     case "BREAK_TEAM":
       return { ...state, teams: state.teams.filter((t) => t.id !== action.id) };
 
+    case "MOVE_PLAYER": {
+      const idx = state.players.findIndex((p) => p.id === action.id);
+      if (idx < 0) return state;
+      const newIdx = idx + action.direction;
+      if (newIdx < 0 || newIdx >= state.players.length) return state;
+      const players = [...state.players];
+      [players[idx], players[newIdx]] = [players[newIdx], players[idx]];
+      return { ...state, players };
+    }
+
+    case "MOVE_TEAM": {
+      const idx = state.teams.findIndex((t) => t.id === action.id);
+      if (idx < 0) return state;
+      const newIdx = idx + action.direction;
+      if (newIdx < 0 || newIdx >= state.teams.length) return state;
+      const teams = [...state.teams];
+      [teams[idx], teams[newIdx]] = [teams[newIdx], teams[idx]];
+      return { ...state, teams };
+    }
+
     case "AUTO_PAIR": {
       const paired = new Set(state.teams.flatMap((t) => t.playerIds));
       const unpaired = state.players.filter((p) => !paired.has(p.id));

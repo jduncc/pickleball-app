@@ -249,6 +249,38 @@ function SetupScreen({ state, history, dispatch }) {
         </section>
       )}
 
+      {(state.mode === "individual" ? state.players.length : state.teams.length) >= 2 && (
+        <section className="pbr-card">
+          <h2>Play order</h2>
+          <p className="pbr-hint">
+            Top plays the first game; the bottom sits out first. Defaults to the order added — reorder if that's not
+            right (e.g. move the last arrival to the bottom so they sit first).
+          </p>
+          <ol className="pbr-order-list">
+            {(state.mode === "individual" ? state.players : state.teams).map((item, i, arr) => (
+              <li key={item.id} className="pbr-order-row">
+                <span className="pbr-order-pos">{i + 1}</span>
+                <span className="pbr-order-name">{item.name}</span>
+                <div className="pbr-order-controls">
+                  <button
+                    className="pbr-btn pbr-btn-ghost pbr-btn-icon pbr-btn-tiny"
+                    disabled={i === 0}
+                    onClick={() => dispatch({ type: state.mode === "fixed" ? "MOVE_TEAM" : "MOVE_PLAYER", id: item.id, direction: -1 })}
+                    aria-label={`Move ${item.name} up`}
+                  ><ChevronUp size={15} /></button>
+                  <button
+                    className="pbr-btn pbr-btn-ghost pbr-btn-icon pbr-btn-tiny"
+                    disabled={i === arr.length - 1}
+                    onClick={() => dispatch({ type: state.mode === "fixed" ? "MOVE_TEAM" : "MOVE_PLAYER", id: item.id, direction: 1 })}
+                    aria-label={`Move ${item.name} down`}
+                  ><ChevronDown size={15} /></button>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
       <section className="pbr-card">
         <h2>Courts available</h2>
         <div className="pbr-stepper">
@@ -649,6 +681,13 @@ function Styles() {
 
       .pbr-team-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
       .pbr-team-row { display: flex; justify-content: space-between; align-items: center; background: var(--navy-3); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+
+      .pbr-order-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+      .pbr-order-row { display: flex; align-items: center; gap: 10px; background: var(--navy-3); border-radius: 10px; padding: 7px 8px 7px 12px; }
+      .pbr-order-pos { font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: var(--chalk-dim); width: 18px; font-size: 13px; }
+      .pbr-order-name { flex: 1; font-size: 14px; font-weight: 600; }
+      .pbr-order-controls { display: flex; gap: 4px; }
+      .pbr-btn-tiny { padding: 6px; }
 
       .pbr-stepper { display: flex; align-items: center; gap: 14px; }
       .pbr-stepper-val { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
