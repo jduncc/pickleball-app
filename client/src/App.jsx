@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff } from "lucide-react";
+import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
 /* Pure display helpers (server owns the real scheduling logic; these are */
@@ -15,6 +15,67 @@ function computeWaitingIds(units) {
 }
 function unitName(units, id) { return units[id] ? units[id].name : "?"; }
 function sideLabel(units, ids) { return ids.map((id) => unitName(units, id)).join(" & "); }
+
+function standingsRows(state) {
+  return Object.values(state.units).slice().sort((a, b) => {
+    const aWinPct = a.gamesPlayed ? a.wins / a.gamesPlayed : 0;
+    const bWinPct = b.gamesPlayed ? b.wins / b.gamesPlayed : 0;
+    if (bWinPct !== aWinPct) return bWinPct - aWinPct;
+    const aDiff = a.pointsFor - a.pointsAgainst, bDiff = b.pointsFor - b.pointsAgainst;
+    if (bDiff !== aDiff) return bDiff - aDiff;
+    return b.pointsFor - a.pointsFor;
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* CSV export                                                              */
+/* ---------------------------------------------------------------------- */
+
+function csvEscape(val) {
+  const s = String(val ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function csvLine(cells) { return cells.map(csvEscape).join(","); }
+
+function buildSessionCSV(state, label) {
+  const who = state.mode === "fixed" ? "Team" : "Player";
+  const lines = [];
+  lines.push(`Session results${label ? " - " + label : ""}`);
+  lines.push(`Format,${state.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}`);
+  lines.push("");
+  lines.push("STANDINGS");
+  lines.push(csvLine(["Rank", who, "Wins", "Losses", "Points For", "Points Against", "Diff"]));
+  standingsRows(state).forEach((u, i) => {
+    lines.push(csvLine([i + 1, u.name, u.wins, u.losses, u.pointsFor, u.pointsAgainst, u.pointsFor - u.pointsAgainst]));
+  });
+  lines.push("");
+  lines.push("GAME LOG");
+  lines.push(csvLine(["Game #", "Court", "Side A", "Score A", "Score B", "Side B", "Winner"]));
+  state.log.forEach((e, i) => {
+    const aWon = e.scoreA > e.scoreB;
+    const aNames = sideLabel(state.units, e.sideA);
+    const bNames = sideLabel(state.units, e.sideB);
+    lines.push(csvLine([i + 1, e.courtId + 1, aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames]));
+  });
+  return lines.join("\n");
+}
+
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportSession(state, label) {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  downloadText(`pickleball-results-${dateStr}.csv`, buildSessionCSV(state, label));
+}
 
 /* ---------------------------------------------------------------------- */
 /* Socket connection hook                                                  */
@@ -57,7 +118,7 @@ export default function App() {
       {!state ? (
         <div className="pbr-loading">Connecting to server…</div>
       ) : state.phase === "setup" ? (
-        <SetupScreen state={state} dispatch={dispatch} />
+        <SetupScreen state={state} history={history} dispatch={dispatch} />
       ) : (
         <SessionScreen state={state} history={history} dispatch={dispatch} />
       )}
@@ -75,9 +136,10 @@ function ConnBadge({ connected }) {
 
 /* ------------------------------- Setup ---------------------------------- */
 
-function SetupScreen({ state, dispatch }) {
+function SetupScreen({ state, history, dispatch }) {
   const [nameInput, setNameInput] = useState("");
   const [selectedForPair, setSelectedForPair] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const pairedIds = new Set(state.teams.flatMap((t) => t.playerIds));
   const unpaired = state.players.filter((p) => !pairedIds.has(p.id));
@@ -103,8 +165,21 @@ function SetupScreen({ state, dispatch }) {
         <div>
           <h1>Round Robin Setup</h1>
           <p className="pbr-sub">Add your players, pick a format, then hit the courts. Everyone on this network sees the same session.</p>
+          {history.length > 0 && (
+            <button className="pbr-link-btn" onClick={() => setShowHistory((v) => !v)}>
+              <History size={13} /> {showHistory ? "Hide" : "View"} past sessions ({history.length})
+              {showHistory ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+          )}
         </div>
       </header>
+
+      {showHistory && (
+        <section className="pbr-card">
+          <h2><History size={18} /> Past sessions</h2>
+          <HistoryList history={history} />
+        </section>
+      )}
 
       <section className="pbr-card">
         <h2><Users size={18} /> Players</h2>
@@ -358,14 +433,7 @@ function QueueTab({ state, dispatch }) {
 }
 
 function StandingsTab({ state }) {
-  const rows = Object.values(state.units).slice().sort((a, b) => {
-    const aWinPct = a.gamesPlayed ? a.wins / a.gamesPlayed : 0;
-    const bWinPct = b.gamesPlayed ? b.wins / b.gamesPlayed : 0;
-    if (bWinPct !== aWinPct) return bWinPct - aWinPct;
-    const aDiff = a.pointsFor - a.pointsAgainst, bDiff = b.pointsFor - b.pointsAgainst;
-    if (bDiff !== aDiff) return bDiff - aDiff;
-    return b.pointsFor - a.pointsFor;
-  });
+  const rows = standingsRows(state);
 
   return (
     <div className="pbr-standings-tab">
@@ -402,7 +470,10 @@ function LogTab({ state, history, dispatch }) {
       <section className="pbr-card">
         <div className="pbr-log-header-row">
           <h2>Game log</h2>
-          <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => dispatch({ type: "UNDO_LAST" })}><Undo2 size={14} /> Undo last</button>
+          <div className="pbr-log-header-actions">
+            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => exportSession(state)}><Download size={14} /> Export CSV</button>
+            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => dispatch({ type: "UNDO_LAST" })}><Undo2 size={14} /> Undo last</button>
+          </div>
         </div>
         {entries.length === 0 && <p className="pbr-empty">No games logged yet.</p>}
         <ul className="pbr-log-list">
@@ -427,22 +498,57 @@ function LogTab({ state, history, dispatch }) {
       {history.length > 0 && (
         <section className="pbr-card">
           <h2>Past sessions</h2>
-          <ul className="pbr-history-list">
-            {history.map((h) => {
-              const dt = new Date(h.endedAt);
-              const rows = Object.values(h.state.units).sort((a, b) => (b.wins - b.losses) - (a.wins - a.losses));
-              const top = rows[0];
-              return (
-                <li key={h.id} className="pbr-history-row">
-                  <span>{dt.toLocaleDateString()} · {h.state.log.length} games</span>
-                  {top && <span className="pbr-history-winner">🏆 {top.name}</span>}
-                </li>
-              );
-            })}
-          </ul>
+          <HistoryList history={history} />
         </section>
       )}
     </div>
+  );
+}
+
+function HistoryList({ history }) {
+  const [openId, setOpenId] = useState(null);
+
+  return (
+    <ul className="pbr-history-list">
+      {history.map((h) => {
+        const dt = new Date(h.endedAt);
+        const rows = standingsRows(h.state);
+        const top = rows[0];
+        const open = openId === h.id;
+        return (
+          <li key={h.id} className="pbr-history-item">
+            <button className="pbr-history-row" onClick={() => setOpenId(open ? null : h.id)}>
+              <span className="pbr-history-main">
+                <span>{dt.toLocaleDateString()} · {h.state.log.length} game{h.state.log.length !== 1 ? "s" : ""} · {h.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}</span>
+                {top && <span className="pbr-history-winner">🏆 {top.name}</span>}
+              </span>
+              {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+            {open && (
+              <div className="pbr-history-detail">
+                <table className="pbr-table">
+                  <thead>
+                    <tr><th>#</th><th>{h.mode === "fixed" ? "Team" : "Player"}</th><th>W</th><th>L</th><th>Diff</th></tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((u, i) => (
+                      <tr key={u.id}>
+                        <td>{i + 1}</td>
+                        <td>{u.name}</td>
+                        <td>{u.wins}</td>
+                        <td>{u.losses}</td>
+                        <td className={u.pointsFor - u.pointsAgainst > 0 ? "pbr-pos" : u.pointsFor - u.pointsAgainst < 0 ? "pbr-neg" : ""}>{u.pointsFor - u.pointsAgainst > 0 ? "+" : ""}{u.pointsFor - u.pointsAgainst}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => exportSession(h.state, dt.toLocaleDateString())}><Download size={14} /> Export CSV</button>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -514,6 +620,7 @@ function Styles() {
 
       .pbr-header { display: flex; align-items: center; gap: 14px; padding: 20px 18px 6px; }
       .pbr-sub { margin: 4px 0 0; color: var(--chalk-dim); font-size: 13px; }
+      .pbr-link-btn { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; color: var(--yellow); font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 0 0; cursor: pointer; }
 
       .pbr-setup { display: flex; flex-direction: column; gap: 14px; padding: 0 16px 32px; }
 
@@ -599,8 +706,10 @@ function Styles() {
       .pbr-pos { color: var(--green); font-weight: 700; }
       .pbr-neg { color: var(--coral); font-weight: 700; }
 
-      .pbr-log-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+      .pbr-log-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; gap: 8px; }
       .pbr-log-header-row h2 { margin-bottom: 0; }
+      .pbr-log-header-actions { display: flex; gap: 6px; }
+      .pbr-log-header-actions .pbr-btn-small { margin-top: 0; }
       .pbr-log-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
       .pbr-log-row { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 8px; background: var(--navy-3); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; }
       .pbr-log-court { color: var(--chalk-dim); font-size: 11px; }
@@ -610,8 +719,13 @@ function Styles() {
       .pbr-log-score { font-family: 'Space Grotesk', sans-serif; font-weight: 700; text-align: center; }
 
       .pbr-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-      .pbr-history-row { display: flex; justify-content: space-between; background: var(--navy-3); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; color: var(--chalk-dim); }
+      .pbr-history-item { background: var(--navy-3); border-radius: 10px; overflow: hidden; }
+      .pbr-history-row { width: 100%; display: flex; justify-content: space-between; align-items: center; background: none; border: none; color: var(--chalk); padding: 10px 12px; font-size: 12.5px; font-family: inherit; cursor: pointer; text-align: left; }
+      .pbr-history-main { display: flex; flex-direction: column; gap: 3px; color: var(--chalk-dim); }
       .pbr-history-winner { color: var(--yellow); font-weight: 600; }
+      .pbr-history-detail { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+      .pbr-history-detail .pbr-table { background: var(--navy); border-radius: 8px; overflow: hidden; }
+      .pbr-history-detail .pbr-table th, .pbr-history-detail .pbr-table td { padding: 7px 9px; }
 
       .pbr-tabbar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px; display: flex; background: var(--navy-2); border-top: 1px solid var(--navy-3); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
       .pbr-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; color: var(--chalk-dim); font-family: inherit; font-size: 10.5px; font-weight: 600; padding: 8px 4px; cursor: pointer; border-radius: 10px; }
