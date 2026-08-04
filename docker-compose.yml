@@ -1,0 +1,12 @@
+services:
+  pickleball:
+    build: .
+    container_name: pickleball-round-robin
+    ports:
+      - "3000:3000"
+    volumes:
+      - pickleball-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  pickleball-data:
