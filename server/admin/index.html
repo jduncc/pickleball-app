@@ -46,6 +46,12 @@
   .hint { font-size: 12px; color: var(--chalk-dim); margin: 8px 0 0; line-height: 1.5; }
   .warn-box { background: rgba(245,194,66,0.1); border: 1px solid rgba(245,194,66,0.3); border-radius: 10px; padding: 12px; font-size: 12.5px; color: var(--yellow); margin-bottom: 12px; line-height: 1.5; }
   a.back { color: var(--chalk-dim); font-size: 12.5px; text-decoration: none; }
+  .session-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--navy-3); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: 12.5px; }
+  .session-info { display: flex; flex-direction: column; gap: 3px; color: var(--chalk-dim); }
+  .session-winner { color: var(--yellow); font-weight: 600; }
+  .session-del { background: rgba(232,101,79,0.15); color: var(--coral); border: none; border-radius: 8px; padding: 7px 10px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .session-del:disabled { opacity: 0.4; cursor: not-allowed; }
+  .empty-note { color: var(--chalk-dim); font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -83,6 +89,13 @@
       <input type="text" id="confirmText" placeholder="RESET" autocomplete="off" />
       <button class="btn btn-danger" id="resetBtn" disabled>Reset database</button>
       <div class="msg" id="resetMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent sessions</h2>
+      <p class="hint">Delete individual archived sessions without touching anything else (the live session, if any, is untouched).</p>
+      <div id="sessionsList"></div>
+      <div class="msg" id="sessionsMsg"></div>
     </div>
   </div>
 
@@ -124,8 +137,76 @@
         ['Archived sessions', data.archivedSessions],
         ['DB size', kb + ' KB'],
       ].map(([lbl, val]) => `<div class="status-item"><span class="val">${val}</span><span class="lbl">${lbl}</span></div>`).join('');
+      refreshSessions();
     } catch (e) {
       showMsg(statusMsg, 'Could not reach server: ' + e.message, false);
+    }
+  }
+
+  function topUnit(state) {
+    const rows = Object.values(state.units || {}).slice().sort((a, b) => {
+      const aw = a.gamesPlayed ? a.wins / a.gamesPlayed : 0;
+      const bw = b.gamesPlayed ? b.wins / b.gamesPlayed : 0;
+      if (bw !== aw) return bw - aw;
+      const ad = a.pointsFor - a.pointsAgainst, bd = b.pointsFor - b.pointsAgainst;
+      if (bd !== ad) return bd - ad;
+      return b.pointsFor - a.pointsFor;
+    });
+    return rows[0] || null;
+  }
+
+  async function refreshSessions() {
+    const listEl = document.getElementById('sessionsList');
+    try {
+      const res = await fetch('/admin/api/sessions', { headers: authHeaders() });
+      if (res.status === 401) { listEl.innerHTML = ''; return; }
+      const data = await res.json();
+      const sessions = data.sessions || [];
+      if (sessions.length === 0) {
+        listEl.innerHTML = '<p class="empty-note">No archived sessions yet.</p>';
+        return;
+      }
+      listEl.innerHTML = sessions.map((s) => {
+        const dt = new Date(s.endedAt);
+        const top = topUnit(s.state);
+        const modeLbl = s.mode === 'fixed' ? 'Fixed partners' : 'Individual';
+        const games = (s.state.log || []).length;
+        return `
+          <div class="session-row" data-id="${s.id}">
+            <div class="session-info">
+              <span>${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${modeLbl} · ${games} game${games !== 1 ? 's' : ''}</span>
+              ${top ? `<span class="session-winner">🏆 ${top.name}</span>` : ''}
+            </div>
+            <button class="session-del" data-id="${s.id}">Delete</button>
+          </div>`;
+      }).join('');
+      listEl.querySelectorAll('.session-del').forEach((btn) => {
+        btn.addEventListener('click', () => deleteSession(btn.dataset.id, btn));
+      });
+    } catch (e) {
+      listEl.innerHTML = '<p class="empty-note">Could not load sessions.</p>';
+    }
+  }
+
+  async function deleteSession(id, btn) {
+    if (!confirm('Delete this session permanently? This cannot be undone.')) return;
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    const sessionsMsg = document.getElementById('sessionsMsg');
+    try {
+      const res = await fetch('/admin/api/sessions/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+      if (res.status === 401) { showMsg(sessionsMsg, 'Wrong or missing admin token.', false); btn.disabled = false; btn.textContent = 'Delete'; return; }
+      const data = await res.json();
+      if (data.ok) {
+        showMsg(sessionsMsg, 'Session deleted.', true);
+        refreshStatus();
+      } else {
+        showMsg(sessionsMsg, 'Delete failed: ' + (data.error || 'unknown error'), false);
+        btn.disabled = false; btn.textContent = 'Delete';
+      }
+    } catch (e) {
+      showMsg(sessionsMsg, 'Delete failed: ' + e.message, false);
+      btn.disabled = false; btn.textContent = 'Delete';
     }
   }
 

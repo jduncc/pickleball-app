@@ -49,10 +49,14 @@ function archiveCurrent(state) {
     .run(randomUUID(), Date.now(), state.mode, JSON.stringify(state));
 }
 
-function getHistory() {
-  return db.prepare("SELECT id, ended_at, mode, data FROM session_history ORDER BY ended_at DESC LIMIT 25")
-    .all()
+function getHistoryList(limit) {
+  return db.prepare("SELECT id, ended_at, mode, data FROM session_history ORDER BY ended_at DESC LIMIT ?")
+    .all(limit)
     .map((r) => ({ id: r.id, endedAt: r.ended_at, mode: r.mode, state: JSON.parse(r.data) }));
+}
+
+function getHistory() {
+  return getHistoryList(25);
 }
 
 function resetDatabase() {
@@ -125,6 +129,22 @@ app.post("/admin/api/reset", requireAdmin, (req, res) => {
   } catch (err) {
     console.error("Reset failed", err);
     res.status(500).json({ error: "Reset failed" });
+  }
+});
+
+app.get("/admin/api/sessions", requireAdmin, (req, res) => {
+  res.json({ ok: true, sessions: getHistoryList(200) });
+});
+
+app.delete("/admin/api/sessions/:id", requireAdmin, (req, res) => {
+  try {
+    const info = db.prepare("DELETE FROM session_history WHERE id = ?").run(req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: "Session not found" });
+    io.emit("history", getHistory()); // keep connected clients' "past sessions" lists in sync
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete session failed", err);
+    res.status(500).json({ error: "Delete failed" });
   }
 });
 
