@@ -398,6 +398,7 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit }) {
 function ScoreStepper({ value, onChange, accent }) {
   return (
     <div className={"pbr-stepper pbr-score-stepper accent-" + accent}>
+      <button className="pbr-btn pbr-btn-icon pbr-btn-ghost pbr-btn-trophy" onClick={() => onChange(11)} aria-label="Set score to 11" title="Set to 11"><Trophy size={16} /></button>
       <button className="pbr-btn pbr-btn-icon pbr-btn-ghost" onClick={() => onChange(Math.max(0, value - 1))}><Minus size={18} /></button>
       <span className="pbr-score-val">{value}</span>
       <button className="pbr-btn pbr-btn-icon pbr-btn-ghost" onClick={() => onChange(value + 1)}><Plus size={18} /></button>
@@ -726,6 +727,8 @@ function Styles() {
       .pbr-side-names { font-size: 15px; font-weight: 600; }
       .pbr-vs { text-align: center; font-size: 11px; color: var(--chalk-dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 0; }
       .pbr-score-stepper .pbr-score-val { font-family: 'Space Grotesk', sans-serif; font-weight: 900; font-size: 26px; min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+      .pbr-btn-trophy { color: var(--yellow); margin-right: 2px; }
+      .pbr-btn-trophy:hover { background: var(--navy); }
       .accent-a .pbr-score-val { color: var(--green); }
       .accent-b .pbr-score-val { color: var(--coral); }
       .pbr-submit-btn { margin-top: 14px; }
