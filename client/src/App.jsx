@@ -17,6 +17,10 @@ function computeWaitingIds(units) {
 }
 function unitName(units, id) { return units[id] ? units[id].name : "?"; }
 function sideLabel(units, ids) { return ids.map((id) => unitName(units, id)).join(" & "); }
+function courtLabel(courtsState, courtId) {
+  const c = (courtsState || []).find((c) => c.id === courtId);
+  return c && c.name ? c.name : `Court ${courtId + 1}`;
+}
 
 function standingsRows(state) {
   return Object.values(state.units).slice().sort((a, b) => {
@@ -57,7 +61,7 @@ function buildSessionCSV(state, label) {
     const aWon = e.scoreA > e.scoreB;
     const aNames = sideLabel(state.units, e.sideA);
     const bNames = sideLabel(state.units, e.sideB);
-    lines.push(csvLine([i + 1, e.courtId + 1, aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames]));
+    lines.push(csvLine([i + 1, courtLabel(state.courtsState, e.courtId), aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames]));
   });
   return lines.join("\n");
 }
@@ -170,7 +174,7 @@ function buildSessionPDF(state, label) {
       const aWon = e.scoreA > e.scoreB;
       const aNames = sideLabel(state.units, e.sideA);
       const bNames = sideLabel(state.units, e.sideB);
-      return [i + 1, e.courtId + 1, aNames, `${e.scoreA} \u2013 ${e.scoreB}`, bNames, aWon ? aNames : bNames];
+      return [i + 1, courtLabel(state.courtsState, e.courtId), aNames, `${e.scoreA} \u2013 ${e.scoreB}`, bNames, aWon ? aNames : bNames];
     }),
     theme: "striped",
     headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold" },
@@ -415,6 +419,16 @@ function SetupScreen({ state, history, dispatch }) {
         {state.courtCount > maxSensibleCourts && readyCount > 0 && (
           <p className="pbr-hint pbr-warn">With {readyCount} {state.mode === "fixed" ? "teams" : "players"} ready, only about {maxSensibleCourts} court{maxSensibleCourts !== 1 ? "s" : ""} will be filled at first.</p>
         )}
+        {state.courtCount > 1 && (
+          <>
+            <p className="pbr-hint" style={{ marginTop: 14 }}>Playing on specific courts (e.g. Court 7, Court 8)? Name them here so they show up right in the app.</p>
+            <div className="pbr-court-name-grid">
+              {Array.from({ length: state.courtCount }, (_, i) => (
+                <CourtNameInput key={i} index={i} value={state.courtNames[i] || `Court ${i + 1}`} dispatch={dispatch} />
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <button className="pbr-btn pbr-btn-primary pbr-btn-large" disabled={!canStart} onClick={() => dispatch({ type: "START_SESSION" })}>
@@ -426,6 +440,29 @@ function SetupScreen({ state, history, dispatch }) {
 }
 
 /* ------------------------------ Session ---------------------------------- */
+
+function CourtNameInput({ index, value, dispatch }) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => { setDraft(value); }, [value]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) dispatch({ type: "RENAME_COURT", index, name: trimmed });
+    else setDraft(value);
+  };
+
+  return (
+    <input
+      className="pbr-input pbr-court-name-input"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+      placeholder={`Court ${index + 1}`}
+    />
+  );
+}
 
 function SessionScreen({ state, history, dispatch }) {
   const [tab, setTab] = useState("courts");
@@ -467,6 +504,38 @@ function TabBtn({ active, onClick, icon, label }) {
   );
 }
 
+function CourtLabel({ court, dispatch }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(court.name || `Court ${court.id + 1}`);
+
+  useEffect(() => { setDraft(court.name || `Court ${court.id + 1}`); }, [court.name, court.id]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== court.name) dispatch({ type: "RENAME_COURT", index: court.id, name: trimmed });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        className="pbr-input pbr-court-label-input"
+        value={draft}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { setDraft(court.name || `Court ${court.id + 1}`); setEditing(false); } }}
+      />
+    );
+  }
+
+  return (
+    <button className="pbr-court-label pbr-court-label-btn" onClick={() => setEditing(true)} title="Rename court">
+      {court.name || `Court ${court.id + 1}`}
+    </button>
+  );
+}
+
 function CourtsTab({ state, dispatch }) {
   const [drafts, setDrafts] = useState({});
 
@@ -485,7 +554,7 @@ function CourtsTab({ state, dispatch }) {
     <div className="pbr-courts-tab">
       {state.courtsState.map((court) => (
         <div key={court.id} className="pbr-court-card">
-          <div className="pbr-court-label">Court {court.id + 1}</div>
+          <CourtLabel court={court} dispatch={dispatch} />
           {!court.match ? (
             <div className="pbr-court-empty"><Coffee size={18} /> Waiting for players{waitingCount > 0 ? ` (${waitingCount} in queue)` : ""}</div>
           ) : (
@@ -639,7 +708,7 @@ function LogTab({ state, history, dispatch }) {
             const aWon = e.scoreA > e.scoreB;
             return (
               <li key={e.id} className="pbr-log-row">
-                <span className="pbr-log-court">Court {e.courtId + 1}</span>
+                <span className="pbr-log-court">{courtLabel(state.courtsState, e.courtId)}</span>
                 <span className={"pbr-log-side" + (aWon ? " won" : "")}>{sideLabel(state.units, e.sideA)}</span>
                 <span className="pbr-log-score">{e.scoreA} – {e.scoreB}</span>
                 <span className={"pbr-log-side" + (!aWon ? " won" : "")}>{sideLabel(state.units, e.sideB)}</span>
@@ -844,6 +913,11 @@ function Styles() {
       .pbr-courts-tab { display: flex; flex-direction: column; gap: 14px; }
       .pbr-court-card { background: var(--navy-2); border-radius: 16px; padding: 16px; }
       .pbr-court-label { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--chalk-dim); margin-bottom: 10px; }
+      .pbr-court-label-btn { background: none; border: none; padding: 0; cursor: pointer; text-align: left; border-bottom: 1px dashed transparent; }
+      .pbr-court-label-btn:hover { border-bottom-color: var(--chalk-dim); }
+      .pbr-court-label-input { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px; margin-bottom: 10px; width: auto; max-width: 220px; }
+      .pbr-court-name-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+      .pbr-court-name-input { font-size: 14px; padding: 9px 12px; }
       .pbr-court-empty { display: flex; align-items: center; gap: 8px; color: var(--chalk-dim); font-size: 13.5px; padding: 18px 4px; }
 
       .pbr-match { position: relative; }
