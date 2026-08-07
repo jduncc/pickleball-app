@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
 /* Pure display helpers (server owns the real scheduling logic; these are */
@@ -75,6 +77,128 @@ function downloadText(filename, text) {
 function exportSession(state, label) {
   const dateStr = new Date().toISOString().slice(0, 10);
   downloadText(`pickleball-results-${dateStr}.csv`, buildSessionCSV(state, label));
+}
+
+/* ---------------------------------------------------------------------- */
+/* PDF export                                                              */
+/* ---------------------------------------------------------------------- */
+
+const PDF_NAVY = [20, 33, 58];
+const PDF_GREEN = [47, 163, 122];
+const PDF_YELLOW = [245, 194, 66];
+const PDF_DIM = [120, 130, 145];
+
+function buildSessionPDF(state, label) {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 40;
+  const rows = standingsRows(state);
+  const winner = rows[0];
+  const who = state.mode === "fixed" ? "Team" : "Player";
+
+  let y = 50;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...PDF_NAVY);
+  doc.text("Pickleball Round Robin Results", marginX, y);
+
+  y += 20;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...PDF_DIM);
+  const dateLabel = label || new Date().toLocaleDateString();
+  const gameWord = state.log.length === 1 ? "game" : "games";
+  doc.text(
+    `${dateLabel}  \u00b7  ${state.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}  \u00b7  ${state.log.length} ${gameWord}`,
+    marginX,
+    y
+  );
+
+  y += 18;
+  if (winner) {
+    const diff = winner.pointsFor - winner.pointsAgainst;
+    doc.setFillColor(...PDF_YELLOW);
+    doc.roundedRect(marginX, y, pageWidth - marginX * 2, 34, 5, 5, "F");
+    doc.setTextColor(...PDF_NAVY);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(
+      `Winner: ${winner.name}   (${winner.wins}-${winner.losses}, ${diff >= 0 ? "+" : ""}${diff})`,
+      marginX + 12,
+      y + 22
+    );
+    y += 34;
+  }
+
+  y += 26;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...PDF_NAVY);
+  doc.text("Standings", marginX, y);
+
+  autoTable(doc, {
+    startY: y + 8,
+    head: [["#", who, "W", "L", "PF", "PA", "Diff"]],
+    body: rows.map((u, i) => {
+      const diff = u.pointsFor - u.pointsAgainst;
+      return [i + 1, u.name, u.wins, u.losses, u.pointsFor, u.pointsAgainst, (diff >= 0 ? "+" : "") + diff];
+    }),
+    theme: "striped",
+    headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold" },
+    styles: { fontSize: 9, cellPadding: 5 },
+    margin: { left: marginX, right: marginX },
+    didParseCell: (data) => {
+      if (data.section === "body" && data.row.index === 0) {
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.textColor = PDF_GREEN;
+      }
+    },
+  });
+
+  let afterY = doc.lastAutoTable.finalY + 26;
+  if (afterY > doc.internal.pageSize.getHeight() - 100) { doc.addPage(); afterY = 50; }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...PDF_NAVY);
+  doc.text("Game Log", marginX, afterY);
+
+  autoTable(doc, {
+    startY: afterY + 8,
+    head: [["Game", "Court", "Side A", "Score", "Side B", "Winner"]],
+    body: state.log.map((e, i) => {
+      const aWon = e.scoreA > e.scoreB;
+      const aNames = sideLabel(state.units, e.sideA);
+      const bNames = sideLabel(state.units, e.sideB);
+      return [i + 1, e.courtId + 1, aNames, `${e.scoreA} \u2013 ${e.scoreB}`, bNames, aWon ? aNames : bNames];
+    }),
+    theme: "striped",
+    headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold" },
+    styles: { fontSize: 9, cellPadding: 5 },
+    columnStyles: { 5: { fontStyle: "bold", textColor: PDF_GREEN } },
+    margin: { left: marginX, right: marginX },
+  });
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...PDF_DIM);
+    doc.text(
+      `Generated ${new Date().toLocaleString()}  \u00b7  Page ${i} of ${pageCount}`,
+      marginX,
+      doc.internal.pageSize.getHeight() - 20
+    );
+  }
+
+  return doc;
+}
+
+function exportSessionPDF(state, label) {
+  const doc = buildSessionPDF(state, label);
+  const dateStr = new Date().toISOString().slice(0, 10);
+  doc.save(`pickleball-results-${dateStr}.pdf`);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -505,6 +629,7 @@ function LogTab({ state, history, dispatch }) {
           <h2>Game log</h2>
           <div className="pbr-log-header-actions">
             <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => exportSession(state)}><Download size={14} /> Export CSV</button>
+            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => exportSessionPDF(state)}><FileText size={14} /> Export PDF</button>
             <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => dispatch({ type: "UNDO_LAST" })}><Undo2 size={14} /> Undo last</button>
           </div>
         </div>
@@ -575,7 +700,10 @@ function HistoryList({ history }) {
                     ))}
                   </tbody>
                 </table>
-                <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => exportSession(h.state, dt.toLocaleDateString())}><Download size={14} /> Export CSV</button>
+                <div className="pbr-log-header-actions">
+                  <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => exportSession(h.state, dt.toLocaleDateString())}><Download size={14} /> Export CSV</button>
+                  <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => exportSessionPDF(h.state, dt.toLocaleDateString())}><FileText size={14} /> Export PDF</button>
+                </div>
               </div>
             )}
           </li>
@@ -748,9 +876,9 @@ function Styles() {
       .pbr-pos { color: var(--green); font-weight: 700; }
       .pbr-neg { color: var(--coral); font-weight: 700; }
 
-      .pbr-log-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; gap: 8px; }
+      .pbr-log-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; gap: 8px; flex-wrap: wrap; }
       .pbr-log-header-row h2 { margin-bottom: 0; }
-      .pbr-log-header-actions { display: flex; gap: 6px; }
+      .pbr-log-header-actions { display: flex; gap: 6px; flex-wrap: wrap; }
       .pbr-log-header-actions .pbr-btn-small { margin-top: 0; }
       .pbr-log-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
       .pbr-log-row { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 8px; background: var(--navy-3); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; }
