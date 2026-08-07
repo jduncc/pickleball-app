@@ -91,7 +91,7 @@ export const initialState = {
   mode: "individual",
   players: [],
   teams: [],
-  courtCount: 2,
+  courtCount: 1,
   units: {},
   opponentHist: {},
   partnerHist: {},
