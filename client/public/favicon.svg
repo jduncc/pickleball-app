@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="ballGrad" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#FCE08A"/>
+      <stop offset="55%" stop-color="#F5C242"/>
+      <stop offset="100%" stop-color="#D89B1E"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="32" r="29" fill="url(#ballGrad)" stroke="#14213A" stroke-width="2.5"/>
+  <g fill="#14213A" fill-opacity="0.72">
+    <circle cx="32" cy="10" r="3.6"/>
+    <circle cx="17" cy="17" r="3.6"/>
+    <circle cx="47" cy="17" r="3.6"/>
+    <circle cx="9" cy="32" r="3.6"/>
+    <circle cx="55" cy="32" r="3.6"/>
+    <circle cx="17" cy="47" r="3.6"/>
+    <circle cx="47" cy="47" r="3.6"/>
+    <circle cx="32" cy="54" r="3.6"/>
+    <circle cx="32" cy="32" r="3.6"/>
+  </g>
+</svg>
