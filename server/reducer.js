@@ -173,7 +173,7 @@ export function reducer(state, action) {
 
     case "SET_COURTS": {
       const count = Math.max(1, action.count);
-      const courtNames = [...state.courtNames];
+      const courtNames = Array.isArray(state.courtNames) ? [...state.courtNames] : [];
       while (courtNames.length < count) courtNames.push(`Court ${courtNames.length + 1}`);
       courtNames.length = count;
       return { ...state, courtCount: count, courtNames };
@@ -184,12 +184,13 @@ export function reducer(state, action) {
       if (typeof idx !== "number" || idx < 0) return state;
       const name = (action.name || "").trim() || `Court ${idx + 1}`;
       if (state.phase === "session") {
-        if (idx >= state.courtsState.length) return state;
+        if (!Array.isArray(state.courtsState) || idx >= state.courtsState.length) return state;
         const courtsState = state.courtsState.map((c) => (c.id === idx ? { ...c, name } : c));
         return { ...state, courtsState };
       }
-      if (idx >= state.courtNames.length) return state;
-      const courtNames = [...state.courtNames];
+      const existing = Array.isArray(state.courtNames) ? state.courtNames : [];
+      if (idx >= existing.length) return state;
+      const courtNames = [...existing];
       courtNames[idx] = name;
       return { ...state, courtNames };
     }
@@ -202,7 +203,7 @@ export function reducer(state, action) {
         units[s.id] = { id: s.id, name: s.name, gamesPlayed: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastFinishedOrder: order, order };
         order++;
       });
-      const courtsState = Array.from({ length: state.courtCount }, (_, i) => ({ id: i, name: state.courtNames[i] || `Court ${i + 1}`, match: null }));
+      const courtsState = Array.from({ length: state.courtCount }, (_, i) => ({ id: i, name: (state.courtNames && state.courtNames[i]) || `Court ${i + 1}`, match: null }));
       const filled = fillAllEmptyCourts(courtsState, units, state.mode, {}, {});
       return { ...state, phase: "session", units: filled.units, courtsState: filled.courts, opponentHist: {}, partnerHist: {}, log: [], orderCounter: 0 };
     }
@@ -311,7 +312,7 @@ export function reducer(state, action) {
       const count = Math.max(1, action.count);
       let courtsState = [...state.courtsState];
       if (count > courtsState.length) {
-        for (let i = courtsState.length; i < count; i++) courtsState.push({ id: i, name: state.courtNames[i] || `Court ${i + 1}`, match: null });
+        for (let i = courtsState.length; i < count; i++) courtsState.push({ id: i, name: (state.courtNames && state.courtNames[i]) || `Court ${i + 1}`, match: null });
       } else if (count < courtsState.length) {
         const removable = [...courtsState].reverse().filter((c) => !c.match).slice(0, courtsState.length - count).map((c) => c.id);
         courtsState = courtsState.filter((c) => !removable.includes(c.id));

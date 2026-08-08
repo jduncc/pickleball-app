@@ -31,7 +31,21 @@ db.exec(`
 function loadState() {
   const row = db.prepare("SELECT data FROM current_state WHERE id = 1").get();
   if (row) {
-    try { return JSON.parse(row.data); } catch { return { ...initialState }; }
+    try {
+      const parsed = JSON.parse(row.data);
+      // Merge onto initialState so fields added in later versions of the app
+      // (like courtNames) are backfilled for sessions saved by an older
+      // version, instead of being missing and crashing the reducer.
+      const merged = { ...initialState, ...parsed };
+      // Keep courtNames in sync with courtCount for old data that predates
+      // named courts (e.g. courtCount: 2 but no courtNames array at all).
+      const courtNames = Array.isArray(merged.courtNames) ? [...merged.courtNames] : [];
+      while (courtNames.length < merged.courtCount) courtNames.push(`Court ${courtNames.length + 1}`);
+      merged.courtNames = courtNames;
+      return merged;
+    } catch {
+      return { ...initialState };
+    }
   }
   return { ...initialState };
 }
