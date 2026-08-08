@@ -139,6 +139,23 @@ export function reducer(state, action) {
     case "BREAK_TEAM":
       return { ...state, teams: state.teams.filter((t) => t.id !== action.id) };
 
+    case "IMPORT_ROSTER": {
+      if (state.phase !== "setup") return state;
+      const names = Array.isArray(action.names) ? action.names.map((n) => (n || "").trim()).filter(Boolean) : [];
+      if (names.length === 0) return state;
+      const players = names.map((name) => ({ id: rid("p"), name }));
+      const mode = action.mode === "fixed" || action.mode === "individual" ? action.mode : state.mode;
+      let teams = [];
+      if (mode === "fixed" && Array.isArray(action.teamPairs)) {
+        const byName = {};
+        players.forEach((p) => { if (!(p.name in byName)) byName[p.name] = p.id; });
+        teams = action.teamPairs
+          .filter((pair) => Array.isArray(pair) && pair.length === 2 && byName[pair[0]] && byName[pair[1]])
+          .map((pair) => ({ id: rid("t"), name: `${pair[0]} & ${pair[1]}`, playerIds: [byName[pair[0]], byName[pair[1]]] }));
+      }
+      return { ...state, mode, players, teams };
+    }
+
     case "MOVE_PLAYER": {
       const idx = state.players.findIndex((p) => p.id === action.id);
       if (idx < 0) return state;

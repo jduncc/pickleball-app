@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText, Repeat } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
 /* Pure display helpers (server owns the real scheduling logic; these are */
@@ -281,6 +281,19 @@ function SetupScreen({ state, history, dispatch }) {
     setSelectedForPair(null);
   };
 
+  const reuseRoster = (h) => {
+    if (state.players.length > 0 || state.teams.length > 0) {
+      if (!confirm("Replace the current players and format with this past session's setup?")) return;
+    }
+    const names = (h.state.players || []).map((p) => p.name);
+    const byId = Object.fromEntries((h.state.players || []).map((p) => [p.id, p.name]));
+    const teamPairs = (h.state.teams || [])
+      .map((t) => t.playerIds.map((id) => byId[id]))
+      .filter((pair) => pair.length === 2 && pair[0] && pair[1]);
+    dispatch({ type: "IMPORT_ROSTER", names, teamPairs, mode: h.mode });
+    setShowHistory(false);
+  };
+
   const readyCount = state.mode === "fixed" ? state.teams.length : state.players.length;
   const minNeeded = state.mode === "fixed" ? 2 : 4;
   const canStart = readyCount >= minNeeded;
@@ -305,7 +318,7 @@ function SetupScreen({ state, history, dispatch }) {
       {showHistory && (
         <section className="pbr-card">
           <h2><History size={18} /> Past sessions</h2>
-          <HistoryList history={history} />
+          <HistoryList history={history} onReuse={reuseRoster} />
         </section>
       )}
 
@@ -732,7 +745,7 @@ function LogTab({ state, history, dispatch }) {
   );
 }
 
-function HistoryList({ history }) {
+function HistoryList({ history, onReuse }) {
   const [openId, setOpenId] = useState(null);
 
   return (
@@ -742,11 +755,12 @@ function HistoryList({ history }) {
         const rows = standingsRows(h.state);
         const top = rows[0];
         const open = openId === h.id;
+        const rosterCount = (h.state.players || []).length;
         return (
           <li key={h.id} className="pbr-history-item">
             <button className="pbr-history-row" onClick={() => setOpenId(open ? null : h.id)}>
               <span className="pbr-history-main">
-                <span>{dt.toLocaleDateString()} · {h.state.log.length} game{h.state.log.length !== 1 ? "s" : ""} · {h.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}</span>
+                <span>{dt.toLocaleDateString()} · {h.state.log.length} game{h.state.log.length !== 1 ? "s" : ""} · {h.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}{rosterCount > 0 ? ` · ${rosterCount} players` : ""}</span>
                 {top && <span className="pbr-history-winner">🏆 {top.name}</span>}
               </span>
               {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
@@ -770,6 +784,9 @@ function HistoryList({ history }) {
                   </tbody>
                 </table>
                 <div className="pbr-log-header-actions">
+                  {onReuse && rosterCount > 0 && (
+                    <button className="pbr-btn pbr-btn-primary pbr-btn-small" onClick={() => onReuse(h)}><Repeat size={14} /> Use these players</button>
+                  )}
                   <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => exportSession(h.state, dt.toLocaleDateString())}><Download size={14} /> Export CSV</button>
                   <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => exportSessionPDF(h.state, dt.toLocaleDateString())}><FileText size={14} /> Export PDF</button>
                 </div>
