@@ -392,10 +392,15 @@ function SetupScreen({ state, history, dispatch }) {
 
       {(state.mode === "individual" ? state.players.length : state.teams.length) >= 2 && (
         <section className="pbr-card">
-          <h2>Play order</h2>
+          <div className="pbr-log-header-row">
+            <h2>Play order</h2>
+            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => dispatch({ type: "SHUFFLE_ORDER" })}>
+              <Shuffle size={14} /> Randomize
+            </button>
+          </div>
           <p className="pbr-hint">
             Top plays the first game; the bottom sits out first. Defaults to the order added — reorder if that's not
-            right (e.g. move the last arrival to the bottom so they sit first).
+            right (e.g. move the last arrival to the bottom so they sit first), or randomize to shuffle everyone.
           </p>
           <ol className="pbr-order-list">
             {(state.mode === "individual" ? state.players : state.teams).map((item, i, arr) => (

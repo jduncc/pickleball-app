@@ -176,6 +176,23 @@ export function reducer(state, action) {
       return { ...state, teams };
     }
 
+    case "SHUFFLE_ORDER": {
+      if (state.mode === "fixed") {
+        const teams = [...state.teams];
+        for (let i = teams.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [teams[i], teams[j]] = [teams[j], teams[i]];
+        }
+        return { ...state, teams };
+      }
+      const players = [...state.players];
+      for (let i = players.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [players[i], players[j]] = [players[j], players[i]];
+      }
+      return { ...state, players };
+    }
+
     case "AUTO_PAIR": {
       const paired = new Set(state.teams.flatMap((t) => t.playerIds));
       const unpaired = state.players.filter((p) => !paired.has(p.id));
