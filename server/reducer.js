@@ -331,6 +331,39 @@ export function reducer(state, action) {
       return { ...state, units: filled.units, courtsState: filled.courts };
     }
 
+    case "SWAP_LINEUP": {
+      // Manually swap one unit in a not-yet-played match for a unit currently
+      // waiting (e.g. a late arrival takes the spot of someone who wants to
+      // sit this game out). Doesn't touch history/stats since this game
+      // hasn't been submitted yet — future matches still auto-schedule as
+      // normal once this one is submitted.
+      const { courtId, outUnitId, inUnitId } = action;
+      if (!outUnitId || !inUnitId || outUnitId === inUnitId) return state;
+      const courtIdx = state.courtsState.findIndex((c) => c.id === courtId);
+      if (courtIdx < 0) return state;
+      const court = state.courtsState[courtIdx];
+      if (!court.match) return state;
+
+      const inUnit = state.units[inUnitId];
+      if (!inUnit || !inUnit.active || inUnit.onCourt) return state; // must be a valid, currently-waiting unit
+
+      let side = null;
+      let slotIdx = -1;
+      if (court.match.sideA.includes(outUnitId)) { side = "sideA"; slotIdx = court.match.sideA.indexOf(outUnitId); }
+      else if (court.match.sideB.includes(outUnitId)) { side = "sideB"; slotIdx = court.match.sideB.indexOf(outUnitId); }
+      if (!side) return state;
+
+      const newMatch = { sideA: [...court.match.sideA], sideB: [...court.match.sideB] };
+      newMatch[side][slotIdx] = inUnitId;
+
+      const courtsState = state.courtsState.map((c, i) => (i === courtIdx ? { ...c, match: newMatch } : c));
+      const units = { ...state.units };
+      units[outUnitId] = { ...units[outUnitId], onCourt: false, lastFinishedOrder: state.orderCounter };
+      units[inUnitId] = { ...units[inUnitId], onCourt: true };
+
+      return { ...state, courtsState, units, orderCounter: state.orderCounter + 1 };
+    }
+
     case "ADD_UNIT_MIDSESSION": {
       const name = (action.name || "").trim();
       if (!name) return state;

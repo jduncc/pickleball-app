@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText, Repeat } from "lucide-react";
+import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText, Repeat, Pencil } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
 /* Pure display helpers (server owns the real scheduling logic; these are */
@@ -556,6 +556,7 @@ function CourtLabel({ court, dispatch }) {
 
 function CourtsTab({ state, dispatch }) {
   const [drafts, setDrafts] = useState({});
+  const [editingCourtId, setEditingCourtId] = useState(null);
 
   const getDraft = (id) => drafts[id] || { a: 0, b: 0 };
   const setDraft = (id, next) => setDrafts((d) => ({ ...d, [id]: next }));
@@ -572,11 +573,29 @@ function CourtsTab({ state, dispatch }) {
     <div className="pbr-courts-tab">
       {state.courtsState.map((court) => (
         <div key={court.id} className="pbr-court-card">
-          <CourtLabel court={court} dispatch={dispatch} />
+          <div className="pbr-court-card-header">
+            <CourtLabel court={court} dispatch={dispatch} />
+            {court.match && (
+              <button
+                className="pbr-btn pbr-btn-ghost pbr-btn-small"
+                onClick={() => setEditingCourtId(editingCourtId === court.id ? null : court.id)}
+              >
+                {editingCourtId === court.id ? <><Check size={14} /> Done</> : <><Pencil size={14} /> Edit lineup</>}
+              </button>
+            )}
+          </div>
           {!court.match ? (
             <div className="pbr-court-empty"><Coffee size={18} /> Waiting for players{waitingCount > 0 ? ` (${waitingCount} in queue)` : ""}</div>
           ) : (
-            <CourtMatch court={court} state={state} draft={getDraft(court.id)} setDraft={(v) => setDraft(court.id, v)} onSubmit={() => submit(court.id)} />
+            <CourtMatch
+              court={court}
+              state={state}
+              draft={getDraft(court.id)}
+              setDraft={(v) => setDraft(court.id, v)}
+              onSubmit={() => submit(court.id)}
+              editing={editingCourtId === court.id}
+              dispatch={dispatch}
+            />
           )}
         </div>
       ))}
@@ -584,24 +603,63 @@ function CourtsTab({ state, dispatch }) {
   );
 }
 
-function CourtMatch({ court, state, draft, setDraft, onSubmit }) {
+function LineupSlot({ unitId, courtId, state, waitingIds, dispatch }) {
+  const unit = state.units[unitId];
+  return (
+    <select
+      className="pbr-lineup-select"
+      value={unitId}
+      onChange={(e) => {
+        const inUnitId = e.target.value;
+        if (inUnitId && inUnitId !== unitId) dispatch({ type: "SWAP_LINEUP", courtId, outUnitId: unitId, inUnitId });
+      }}
+    >
+      <option value={unitId}>{unit ? unit.name : "?"}</option>
+      {waitingIds.length === 0 ? (
+        <option value="" disabled>— no one waiting —</option>
+      ) : (
+        waitingIds.map((id) => <option key={id} value={id}>{state.units[id].name}</option>)
+      )}
+    </select>
+  );
+}
+
+function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch }) {
   const { sideA, sideB } = court.match;
   const canSubmit = draft.a !== draft.b;
+  const waitingIds = editing ? computeWaitingIds(state.units) : [];
+
   return (
     <div className="pbr-match">
       <div className="pbr-court-svg-wrap"><CourtLines /></div>
       <div className="pbr-side pbr-side-a">
-        <div className="pbr-side-names">{sideLabel(state.units, sideA)}</div>
+        {editing ? (
+          <div className="pbr-lineup-edit">
+            {sideA.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
+          </div>
+        ) : (
+          <div className="pbr-side-names">{sideLabel(state.units, sideA)}</div>
+        )}
         <ScoreStepper value={draft.a} onChange={(v) => setDraft({ ...draft, a: v })} accent="a" />
       </div>
       <div className="pbr-vs">vs</div>
       <div className="pbr-side pbr-side-b">
-        <div className="pbr-side-names">{sideLabel(state.units, sideB)}</div>
+        {editing ? (
+          <div className="pbr-lineup-edit">
+            {sideB.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
+          </div>
+        ) : (
+          <div className="pbr-side-names">{sideLabel(state.units, sideB)}</div>
+        )}
         <ScoreStepper value={draft.b} onChange={(v) => setDraft({ ...draft, b: v })} accent="b" />
       </div>
-      <button className="pbr-btn pbr-btn-primary pbr-btn-large pbr-submit-btn" disabled={!canSubmit} onClick={onSubmit}>
-        <Check size={18} /> Submit score
-      </button>
+      {editing ? (
+        <p className="pbr-hint pbr-lineup-hint">Pick a name in either box to swap in a waiting player, then tap Done above.</p>
+      ) : (
+        <button className="pbr-btn pbr-btn-primary pbr-btn-large pbr-submit-btn" disabled={!canSubmit} onClick={onSubmit}>
+          <Check size={18} /> Submit score
+        </button>
+      )}
     </div>
   );
 }
@@ -934,6 +992,10 @@ function Styles() {
 
       .pbr-courts-tab { display: flex; flex-direction: column; gap: 14px; }
       .pbr-court-card { background: var(--navy-2); border-radius: 16px; padding: 16px; }
+      .pbr-court-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+      .pbr-court-card-header .pbr-court-label { margin-bottom: 0; }
+      .pbr-court-card-header .pbr-court-label-input { margin-bottom: 0; }
+      .pbr-court-card-header .pbr-btn-small { margin-top: 0; flex-shrink: 0; }
       .pbr-court-label { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--chalk-dim); margin-bottom: 10px; }
       .pbr-court-label-btn { background: none; border: none; padding: 0; cursor: pointer; text-align: left; border-bottom: 1px dashed transparent; }
       .pbr-court-label-btn:hover { border-bottom-color: var(--chalk-dim); }
@@ -949,6 +1011,9 @@ function Styles() {
       .pbr-side-a { border-left: 3px solid var(--green); padding-left: 12px; }
       .pbr-side-b { border-left: 3px solid var(--coral); padding-left: 12px; }
       .pbr-side-names { font-size: 15px; font-weight: 600; }
+      .pbr-lineup-edit { display: flex; flex-direction: column; gap: 6px; flex: 1; margin-right: 10px; }
+      .pbr-lineup-select { background: var(--navy); border: 1px solid var(--yellow); color: var(--chalk); border-radius: 8px; padding: 8px 9px; font-size: 13.5px; font-family: inherit; width: 100%; }
+      .pbr-lineup-hint { margin-top: 14px; text-align: center; }
       .pbr-vs { text-align: center; font-size: 11px; color: var(--chalk-dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 0; }
       .pbr-score-stepper .pbr-score-val { font-family: 'Space Grotesk', sans-serif; font-weight: 900; font-size: 26px; min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
       .pbr-btn-trophy { color: var(--yellow); margin-right: 2px; }
