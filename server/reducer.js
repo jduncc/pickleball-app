@@ -3,6 +3,14 @@
 // they send actions and render whatever state the server broadcasts back.
 
 const pairKey = (a, b) => [a, b].sort().join("|");
+// Canonical signature for a full match (both full sides), independent of
+// side order or player order within a side — used to detect "we already
+// played this exact matchup" separately from individual pairwise counts.
+const matchSig = (sideA, sideB) => {
+  const a = [...sideA].sort().join(",");
+  const b = [...sideB].sort().join(",");
+  return [a, b].sort().join("|");
+};
 
 function combinations(arr, k) {
   const res = [];
@@ -26,30 +34,45 @@ export function computeWaitingIds(units) {
     .map((u) => u.id);
 }
 
-function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist) {
+function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHistory) {
   const poolSize = Math.min(waitingIds.length, 8);
   const pool = waitingIds.slice(0, poolSize);
-  const posIndex = {};
-  waitingIds.forEach((id, i) => (posIndex[id] = i));
 
+  // We rank candidate matchups by [repeatScore, exactMatchCount, gamesPlayedSum]:
+  // how many times this pairing has happened, then whether this exact full
+  // match (both complete sides) has been played before, then how much these
+  // units are "owed" a game. Ties on all three are still possible, and we
+  // deliberately don't break those with a fixed rule — that used to pick the
+  // same option every time, which looks like the schedule repeating itself.
+  // Instead we collect every tied candidate and pick randomly among them, so
+  // equally-fair options actually vary game to game.
   if (mode === "fixed") {
     if (pool.length < 2) return null;
-    let best = null;
+    let bestKey = null;
+    let candidates = [];
     for (let i = 0; i < pool.length; i++) {
       for (let j = i + 1; j < pool.length; j++) {
         const a = pool[i], b = pool[j];
         const repeatScore = opponentHist[pairKey(a, b)] || 0;
+        const exactCount = (matchHistory && matchHistory[matchSig([a], [b])]) || 0;
         const gp = unitsMap[a].gamesPlayed + unitsMap[b].gamesPlayed;
-        const posSum = posIndex[a] + posIndex[b];
-        const key = [repeatScore, gp, posSum];
-        if (!best || cmpKey(key, best.key) < 0) best = { sideA: [a], sideB: [b], key };
+        const key = [repeatScore, exactCount, gp];
+        const cmp = bestKey ? cmpKey(key, bestKey) : -1;
+        if (!bestKey || cmp < 0) {
+          bestKey = key;
+          candidates = [{ sideA: [a], sideB: [b] }];
+        } else if (cmp === 0) {
+          candidates.push({ sideA: [a], sideB: [b] });
+        }
       }
     }
-    return best;
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
   if (pool.length < 4) return null;
-  let best = null;
+  let bestKey = null;
+  let candidates = [];
   const combos = combinations(pool, 4);
   for (const combo of combos) {
     const splits = [
@@ -62,22 +85,29 @@ function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist) {
       let oppScore = 0;
       for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
       const repeatScore = partnerScore * 2 + oppScore;
+      const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
       const gp = combo.reduce((s, id) => s + unitsMap[id].gamesPlayed, 0);
-      const posSum = combo.reduce((s, id) => s + posIndex[id], 0);
-      const key = [repeatScore, gp, posSum];
-      if (!best || cmpKey(key, best.key) < 0) best = { sideA, sideB, key };
+      const key = [repeatScore, exactCount, gp];
+      const cmp = bestKey ? cmpKey(key, bestKey) : -1;
+      if (!bestKey || cmp < 0) {
+        bestKey = key;
+        candidates = [{ sideA, sideB }];
+      } else if (cmp === 0) {
+        candidates.push({ sideA, sideB });
+      }
     }
   }
-  return best;
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
-function fillAllEmptyCourts(courtsState, unitsIn, mode, opponentHist, partnerHist) {
+function fillAllEmptyCourts(courtsState, unitsIn, mode, opponentHist, partnerHist, matchHistory) {
   const units = { ...unitsIn };
   const courts = courtsState.map((c) => ({ ...c }));
   for (const court of courts) {
     if (court.match) continue;
     const waitingIds = computeWaitingIds(units);
-    const result = pickBest(waitingIds, units, mode, opponentHist, partnerHist);
+    const result = pickBest(waitingIds, units, mode, opponentHist, partnerHist, matchHistory);
     if (!result) continue;
     const { sideA, sideB } = result;
     [...sideA, ...sideB].forEach((id) => { units[id] = { ...units[id], onCourt: true }; });
@@ -96,6 +126,7 @@ export const initialState = {
   units: {},
   opponentHist: {},
   partnerHist: {},
+  matchHistory: {},
   courtsState: [],
   log: [],
   orderCounter: 0,
@@ -238,8 +269,8 @@ export function reducer(state, action) {
         order++;
       });
       const courtsState = Array.from({ length: state.courtCount }, (_, i) => ({ id: i, name: (state.courtNames && state.courtNames[i]) || `Court ${i + 1}`, match: null }));
-      const filled = fillAllEmptyCourts(courtsState, units, state.mode, {}, {});
-      return { ...state, phase: "session", units: filled.units, courtsState: filled.courts, opponentHist: {}, partnerHist: {}, log: [], orderCounter: 0 };
+      const filled = fillAllEmptyCourts(courtsState, units, state.mode, {}, {}, {});
+      return { ...state, phase: "session", units: filled.units, courtsState: filled.courts, opponentHist: {}, partnerHist: {}, matchHistory: {}, log: [], orderCounter: 0 };
     }
 
     case "SUBMIT_SCORE": {
@@ -276,11 +307,15 @@ export function reducer(state, action) {
         if (sideB.length === 2) { const k = pairKey(...sideB); partnerHist[k] = (partnerHist[k] || 0) + 1; }
       }
 
+      const matchHistory = { ...state.matchHistory };
+      const msig = matchSig(sideA, sideB);
+      matchHistory[msig] = (matchHistory[msig] || 0) + 1;
+
       const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: Date.now() };
       let courtsState = state.courtsState.map((c) => (c.id === courtId ? { ...c, match: null } : c));
-      const filled = fillAllEmptyCourts(courtsState, units, state.mode, opponentHist, partnerHist);
+      const filled = fillAllEmptyCourts(courtsState, units, state.mode, opponentHist, partnerHist, matchHistory);
 
-      return { ...state, units: filled.units, courtsState: filled.courts, opponentHist, partnerHist, log: [...state.log, logEntry], orderCounter: order + 1 };
+      return { ...state, units: filled.units, courtsState: filled.courts, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1 };
     }
 
     case "UNDO_LAST": {
@@ -318,16 +353,20 @@ export function reducer(state, action) {
         if (lastEntry.sideB.length === 2) { const k = pairKey(...lastEntry.sideB); partnerHist[k] = Math.max(0, (partnerHist[k] || 0) - 1); }
       }
 
+      const matchHistory = { ...state.matchHistory };
+      const msig = matchSig(lastEntry.sideA, lastEntry.sideB);
+      matchHistory[msig] = Math.max(0, (matchHistory[msig] || 0) - 1);
+
       const courtsState = state.courtsState.map((c) => (c.id === lastEntry.courtId ? { ...c, match: { sideA: lastEntry.sideA, sideB: lastEntry.sideB } } : c));
 
-      return { ...state, units, opponentHist, partnerHist, courtsState, log: state.log.slice(0, -1) };
+      return { ...state, units, opponentHist, partnerHist, matchHistory, courtsState, log: state.log.slice(0, -1) };
     }
 
     case "TOGGLE_ACTIVE": {
       const u = state.units[action.id];
       if (!u || u.onCourt) return state;
       const units = { ...state.units, [action.id]: { ...u, active: !u.active } };
-      const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist);
+      const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
       return { ...state, units: filled.units, courtsState: filled.courts };
     }
 
@@ -371,7 +410,7 @@ export function reducer(state, action) {
       const gp = vals.length ? Math.min(...vals.map((u) => u.gamesPlayed)) : 0;
       const id = rid(state.mode === "fixed" ? "t" : "p");
       const units = { ...state.units, [id]: { id, name, gamesPlayed: gp, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastFinishedOrder: state.orderCounter, order: state.orderCounter } };
-      const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist);
+      const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
       return { ...state, units: filled.units, courtsState: filled.courts, orderCounter: state.orderCounter + 1 };
     }
 
@@ -384,7 +423,7 @@ export function reducer(state, action) {
         const removable = [...courtsState].reverse().filter((c) => !c.match).slice(0, courtsState.length - count).map((c) => c.id);
         courtsState = courtsState.filter((c) => !removable.includes(c.id));
       }
-      const filled = fillAllEmptyCourts(courtsState, state.units, state.mode, state.opponentHist, state.partnerHist);
+      const filled = fillAllEmptyCourts(courtsState, state.units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
       return { ...state, courtsState: filled.courts, units: filled.units, courtCount: filled.courts.length };
     }
 
