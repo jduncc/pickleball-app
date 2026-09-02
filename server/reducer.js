@@ -30,7 +30,7 @@ const cmpKey = (a, b) => {
 export function computeWaitingIds(units) {
   return Object.values(units)
     .filter((u) => u.active && !u.onCourt)
-    .sort((a, b) => a.gamesPlayed - b.gamesPlayed || a.lastFinishedOrder - b.lastFinishedOrder || a.order - b.order)
+    .sort((a, b) => a.gamesPlayed - b.gamesPlayed || (a.lastPlayedAt || 0) - (b.lastPlayedAt || 0) || (a.lastPlayedSeq || 0) - (b.lastPlayedSeq || 0) || a.order - b.order)
     .map((u) => u.id);
 }
 
@@ -43,29 +43,37 @@ function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHi
 
   // Fairness comes first and is non-negotiable, on TWO dimensions:
   //   1. games played (fewer games = more overdue to play)
-  //   2. among players tied on games played, how long they've been waiting
-  //      since they last played (older lastFinishedOrder = more overdue)
-  // waitingIds is already sorted by exactly (gamesPlayed, lastFinishedOrder,
-  // order), so anyone whose (gamesPlayed, lastFinishedOrder) is strictly
-  // better than the cutoff MUST play this round — no pairing-variety
-  // preference is allowed to bump them for someone less overdue. Handling
-  // only dimension 1 isn't enough: once several players are tied on games
-  // played (which happens constantly, e.g. once everyone's played the same
-  // number of rounds), whoever sat out most recently still needs a hard
-  // guarantee, or they can get skipped for pairing variety and end up
-  // sitting out two rounds in a row. Only players tied on BOTH dimensions
-  // are "contested" — free to be arranged for pairing variety and
-  // randomized among ties.
+  //   2. among players tied on games played, actual elapsed time since they
+  //      last finished playing (longer ago = more overdue) — real wall-clock
+  //      time (ms since epoch), so it lines up with what "sitting order"
+  //      intuitively means. A monotonic sequence number breaks any exact
+  //      timestamp ties (e.g. two courts finishing in the same millisecond)
+  //      so equally-timed events still resolve to a strict, unambiguous
+  //      order rather than colliding into a false tie.
+  // waitingIds is already sorted by exactly (gamesPlayed, lastPlayedAt,
+  // lastPlayedSeq, order), so anyone strictly better than the cutoff on
+  // these MUST play this round — no pairing-variety preference is allowed
+  // to bump them for someone less overdue. Handling only dimension 1 isn't
+  // enough: once several players are tied on games played (which happens
+  // constantly, e.g. once everyone's played the same number of rounds),
+  // whoever sat out most recently still needs a hard guarantee, or they can
+  // get skipped for pairing variety and end up sitting out two rounds in a
+  // row. Only players tied on ALL of these are "contested" — free to be
+  // arranged for pairing variety and randomized among ties.
   const cutoffUnit = unitsMap[waitingIds[required - 1]];
   const cutoffGP = cutoffUnit.gamesPlayed;
-  const cutoffLFO = cutoffUnit.lastFinishedOrder;
+  const cutoffLPA = cutoffUnit.lastPlayedAt || 0;
+  const cutoffSeq = cutoffUnit.lastPlayedSeq || 0;
   const mandatory = waitingIds.filter((id) => {
     const u = unitsMap[id];
-    return u.gamesPlayed < cutoffGP || (u.gamesPlayed === cutoffGP && u.lastFinishedOrder < cutoffLFO);
+    if (u.gamesPlayed !== cutoffGP) return u.gamesPlayed < cutoffGP;
+    const lpa = u.lastPlayedAt || 0;
+    if (lpa !== cutoffLPA) return lpa < cutoffLPA;
+    return (u.lastPlayedSeq || 0) < cutoffSeq;
   });
   let contested = waitingIds.filter((id) => {
     const u = unitsMap[id];
-    return u.gamesPlayed === cutoffGP && u.lastFinishedOrder === cutoffLFO;
+    return u.gamesPlayed === cutoffGP && (u.lastPlayedAt || 0) === cutoffLPA && (u.lastPlayedSeq || 0) === cutoffSeq;
   });
   // Cap the contested-candidate search only as a safety valve against truly
   // pathological input sizes (hundreds of people waiting for one court).
@@ -170,9 +178,9 @@ function computeNextPreview(state, court) {
   if (!court.match) return null;
   const { sideA, sideB } = court.match;
   const units = { ...state.units };
-  const order = state.orderCounter;
+  const now = Date.now();
   [...sideA, ...sideB].forEach((id) => {
-    units[id] = { ...units[id], gamesPlayed: units[id].gamesPlayed + 1, onCourt: false, lastFinishedOrder: order };
+    units[id] = { ...units[id], gamesPlayed: units[id].gamesPlayed + 1, onCourt: false, lastPlayedAt: now, lastPlayedSeq: state.orderCounter };
   });
   const opponentHist = { ...state.opponentHist };
   sideA.forEach((a) => sideB.forEach((b) => { const k = pairKey(a, b); opponentHist[k] = (opponentHist[k] || 0) + 1; }));
@@ -366,7 +374,7 @@ export function reducer(state, action) {
       let order = 0;
       const source = state.mode === "fixed" ? state.teams : state.players;
       source.forEach((s) => {
-        units[s.id] = { id: s.id, name: s.name, gamesPlayed: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastFinishedOrder: order, order };
+        units[s.id] = { id: s.id, name: s.name, gamesPlayed: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastPlayedAt: 0, lastPlayedSeq: 0, order };
         order++;
       });
       const courtsState = Array.from({ length: state.courtCount }, (_, i) => ({ id: i, name: (state.courtNames && state.courtNames[i]) || `Court ${i + 1}`, match: null }));
@@ -383,19 +391,20 @@ export function reducer(state, action) {
       const aWon = scoreA > scoreB;
       const units = { ...state.units };
       const order = state.orderCounter;
+      const endedAt = Date.now();
 
       sideA.forEach((id) => {
         const u = { ...units[id] };
         u.gamesPlayed += 1; u.pointsFor += scoreA; u.pointsAgainst += scoreB;
         if (aWon) u.wins += 1; else u.losses += 1;
-        u.onCourt = false; u.lastFinishedOrder = order;
+        u.onCourt = false; u.lastPlayedAt = endedAt; u.lastPlayedSeq = order;
         units[id] = u;
       });
       sideB.forEach((id) => {
         const u = { ...units[id] };
         u.gamesPlayed += 1; u.pointsFor += scoreB; u.pointsAgainst += scoreA;
         if (!aWon) u.wins += 1; else u.losses += 1;
-        u.onCourt = false; u.lastFinishedOrder = order;
+        u.onCourt = false; u.lastPlayedAt = endedAt; u.lastPlayedSeq = order;
         units[id] = u;
       });
 
@@ -418,7 +427,6 @@ export function reducer(state, action) {
       const playingIds = new Set([...sideA, ...sideB]);
       const sittingOut = Object.keys(units).filter((id) => !playingIds.has(id) && !units[id].onCourt);
 
-      const endedAt = Date.now();
       const startedAt = court.match.startedAt || endedAt;
       const durationMs = Math.max(0, endedAt - startedAt);
       const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: endedAt, startedAt, durationMs, sittingOut };
@@ -512,7 +520,7 @@ export function reducer(state, action) {
 
       const courtsState = state.courtsState.map((c, i) => (i === courtIdx ? { ...c, match: newMatch } : c));
       const units = { ...state.units };
-      units[outUnitId] = { ...units[outUnitId], onCourt: false, lastFinishedOrder: state.orderCounter };
+      units[outUnitId] = { ...units[outUnitId], onCourt: false, lastPlayedAt: Date.now(), lastPlayedSeq: state.orderCounter };
       units[inUnitId] = { ...units[inUnitId], onCourt: true };
 
       return withNextPreview({ ...state, courtsState, units, orderCounter: state.orderCounter + 1 });
@@ -524,7 +532,7 @@ export function reducer(state, action) {
       const vals = Object.values(state.units);
       const gp = vals.length ? Math.min(...vals.map((u) => u.gamesPlayed)) : 0;
       const id = rid(state.mode === "fixed" ? "t" : "p");
-      const units = { ...state.units, [id]: { id, name, gamesPlayed: gp, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastFinishedOrder: state.orderCounter, order: state.orderCounter } };
+      const units = { ...state.units, [id]: { id, name, gamesPlayed: gp, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastPlayedAt: Date.now(), lastPlayedSeq: state.orderCounter, order: state.orderCounter } };
       const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
       return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts, orderCounter: state.orderCounter + 1 });
     }

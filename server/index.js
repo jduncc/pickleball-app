@@ -42,6 +42,21 @@ function loadState() {
       const courtNames = Array.isArray(merged.courtNames) ? [...merged.courtNames] : [];
       while (courtNames.length < merged.courtCount) courtNames.push(`Court ${courtNames.length + 1}`);
       merged.courtNames = courtNames;
+      // Backfill units saved by a version that tracked "lastFinishedOrder"
+      // (an event counter) instead of "lastPlayedAt" (a real timestamp) —
+      // the comparator already tolerates a missing value via `|| 0`, but
+      // normalize it here too so it isn't left dangling on old records.
+      if (merged.units && typeof merged.units === "object") {
+        const units = {};
+        for (const [id, u] of Object.entries(merged.units)) {
+          units[id] = {
+            ...u,
+            lastPlayedAt: typeof u.lastPlayedAt === "number" ? u.lastPlayedAt : 0,
+            lastPlayedSeq: typeof u.lastPlayedSeq === "number" ? u.lastPlayedSeq : 0,
+          };
+        }
+        merged.units = units;
+      }
       return merged;
     } catch {
       return { ...initialState };

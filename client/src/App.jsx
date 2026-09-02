@@ -12,7 +12,7 @@ import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, U
 function computeWaitingIds(units) {
   return Object.values(units)
     .filter((u) => u.active && !u.onCourt)
-    .sort((a, b) => a.gamesPlayed - b.gamesPlayed || a.lastFinishedOrder - b.lastFinishedOrder || a.order - b.order)
+    .sort((a, b) => a.gamesPlayed - b.gamesPlayed || (a.lastPlayedAt || 0) - (b.lastPlayedAt || 0) || (a.lastPlayedSeq || 0) - (b.lastPlayedSeq || 0) || a.order - b.order)
     .map((u) => u.id);
 }
 function unitName(units, id) { return units[id] ? units[id].name : "?"; }
@@ -652,6 +652,39 @@ function LineupSlot({ unitId, courtId, state, waitingIds, dispatch }) {
   );
 }
 
+// Quick mid-game "someone needs to sit" flow: tap a name in the active
+// match, confirm, and the app auto-subs in whoever's most overdue to play
+// from the waiting list — reusing the same SWAP_LINEUP action the manual
+// lineup editor uses, just with the replacement chosen automatically.
+function requestQuickSitOut(state, dispatch, courtId, outId) {
+  const outName = unitName(state.units, outId);
+  const waitingIds = computeWaitingIds(state.units);
+  if (waitingIds.length === 0) {
+    alert(`No one is available to sub in for ${outName} right now — everyone else is already playing.`);
+    return;
+  }
+  const inId = waitingIds[0];
+  const inName = unitName(state.units, inId);
+  if (confirm(`Sit ${outName} out for this game and bring in ${inName}?`)) {
+    dispatch({ type: "SWAP_LINEUP", courtId, outUnitId: outId, inUnitId: inId });
+  }
+}
+
+function SideNames({ state, ids, dispatch, courtId }) {
+  return (
+    <div className="pbr-side-names">
+      {ids.map((id, i) => (
+        <span key={id}>
+          {i > 0 ? " & " : ""}
+          <button type="button" className="pbr-name-tap" onClick={() => requestQuickSitOut(state, dispatch, courtId, id)}>
+            {unitName(state.units, id)}
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch }) {
   const { sideA, sideB } = court.match;
   const canSubmit = draft.a !== draft.b;
@@ -667,7 +700,7 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch
             {sideA.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
           </div>
         ) : (
-          <div className="pbr-side-names">{sideLabel(state.units, sideA)}</div>
+          <SideNames state={state} ids={sideA} dispatch={dispatch} courtId={court.id} />
         )}
         <ScoreStepper value={draft.a} onChange={(v) => setDraft({ ...draft, a: v })} accent="a" />
       </div>
@@ -678,16 +711,19 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch
             {sideB.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
           </div>
         ) : (
-          <div className="pbr-side-names">{sideLabel(state.units, sideB)}</div>
+          <SideNames state={state} ids={sideB} dispatch={dispatch} courtId={court.id} />
         )}
         <ScoreStepper value={draft.b} onChange={(v) => setDraft({ ...draft, b: v })} accent="b" />
       </div>
       {editing ? (
         <p className="pbr-hint pbr-lineup-hint">Pick a name in either box to swap in a waiting player, then tap Done above.</p>
       ) : (
-        <button className="pbr-btn pbr-btn-primary pbr-btn-large pbr-submit-btn" disabled={!canSubmit} onClick={onSubmit}>
-          <Check size={18} /> Submit score
-        </button>
+        <>
+          <p className="pbr-hint pbr-tap-hint">Tap a name if someone needs to sit this game out.</p>
+          <button className="pbr-btn pbr-btn-primary pbr-btn-large pbr-submit-btn" disabled={!canSubmit} onClick={onSubmit}>
+            <Check size={18} /> Submit score
+          </button>
+        </>
       )}
       {nextUp && (
         <div className="pbr-next-up">
@@ -1055,9 +1091,12 @@ function Styles() {
       .pbr-side-a { border-left: 3px solid var(--green); padding-left: 12px; }
       .pbr-side-b { border-left: 3px solid var(--coral); padding-left: 12px; }
       .pbr-side-names { font-size: 15px; font-weight: 600; }
+      .pbr-name-tap { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; border-bottom: 1px dashed transparent; }
+      .pbr-name-tap:hover, .pbr-name-tap:active { border-bottom-color: currentColor; opacity: 0.85; }
       .pbr-lineup-edit { display: flex; flex-direction: column; gap: 6px; flex: 1; margin-right: 10px; }
       .pbr-lineup-select { background: var(--navy); border: 1px solid var(--yellow); color: var(--chalk); border-radius: 8px; padding: 8px 9px; font-size: 13.5px; font-family: inherit; width: 100%; }
       .pbr-lineup-hint { margin-top: 14px; text-align: center; }
+      .pbr-tap-hint { margin-top: 10px; text-align: center; font-size: 11.5px; opacity: 0.75; }
       .pbr-next-up { margin-top: 12px; text-align: center; font-size: 12.5px; color: var(--chalk-dim); border-top: 1px dashed var(--navy-3); padding-top: 10px; }
       .pbr-next-up p { margin: 0; }
       .pbr-next-up strong { color: var(--yellow); font-weight: 700; }
