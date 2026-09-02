@@ -22,125 +22,6 @@ function courtLabel(courtsState, courtId) {
   return c && c.name ? c.name : `Court ${courtId + 1}`;
 }
 
-/* ---------------------------------------------------------------------- */
-/* "Next up" preview — a client-side best guess, NOT authoritative. The    */
-/* server is always the one that actually schedules the next match once   */
-/* a score is submitted; this just mirrors that same logic against a      */
-/* hypothetical "this court's game just ended" state so we can show a     */
-/* preview while the score is still being entered. Ties broken by         */
-/* randomness server-side can occasionally make the real result differ.   */
-/* ---------------------------------------------------------------------- */
-
-const previewPairKey = (a, b) => [a, b].sort().join("|");
-const previewMatchSig = (sideA, sideB) => {
-  const a = [...sideA].sort().join(",");
-  const b = [...sideB].sort().join(",");
-  return [a, b].sort().join("|");
-};
-function previewCombinations(arr, k) {
-  const res = [];
-  const rec = (start, combo) => {
-    if (combo.length === k) { res.push(combo.slice()); return; }
-    for (let i = start; i < arr.length; i++) { combo.push(arr[i]); rec(i + 1, combo); combo.pop(); }
-  };
-  rec(0, []);
-  return res;
-}
-const previewCmpKey = (a, b) => {
-  for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) return a[i] - b[i]; }
-  return 0;
-};
-
-function previewPickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHistory) {
-  const required = mode === "fixed" ? 2 : 4;
-  if (waitingIds.length < required) return null;
-  const posIndex = {};
-  waitingIds.forEach((id, i) => (posIndex[id] = i));
-  const cutoffUnit = unitsMap[waitingIds[required - 1]];
-  const cutoffGP = cutoffUnit.gamesPlayed;
-  const cutoffLFO = cutoffUnit.lastFinishedOrder;
-  const mandatory = waitingIds.filter((id) => {
-    const u = unitsMap[id];
-    return u.gamesPlayed < cutoffGP || (u.gamesPlayed === cutoffGP && u.lastFinishedOrder < cutoffLFO);
-  });
-  let contested = waitingIds.filter((id) => {
-    const u = unitsMap[id];
-    return u.gamesPlayed === cutoffGP && u.lastFinishedOrder === cutoffLFO;
-  });
-  if (contested.length > 30) contested = contested.slice(0, 30);
-  const slotsToFill = required - mandatory.length;
-  const contestedCombos = previewCombinations(contested, slotsToFill);
-
-  if (mode === "fixed") {
-    let bestKey = null;
-    let candidates = [];
-    for (const chosen of contestedCombos) {
-      const [a, b] = [...mandatory, ...chosen];
-      const repeatScore = opponentHist[previewPairKey(a, b)] || 0;
-      const exactCount = (matchHistory && matchHistory[previewMatchSig([a], [b])]) || 0;
-      const posSum = posIndex[a] + posIndex[b];
-      const key = [repeatScore, exactCount, posSum];
-      const cmp = bestKey ? previewCmpKey(key, bestKey) : -1;
-      if (!bestKey || cmp < 0) { bestKey = key; candidates = [{ sideA: [a], sideB: [b] }]; }
-      else if (cmp === 0) candidates.push({ sideA: [a], sideB: [b] });
-    }
-    if (candidates.length === 0) return null;
-    return candidates[Math.floor(Math.random() * candidates.length)];
-  }
-
-  let bestKey = null;
-  let candidates = [];
-  for (const chosen of contestedCombos) {
-    const combo = [...mandatory, ...chosen];
-    const splits = [
-      [[combo[0], combo[1]], [combo[2], combo[3]]],
-      [[combo[0], combo[2]], [combo[1], combo[3]]],
-      [[combo[0], combo[3]], [combo[1], combo[2]]],
-    ];
-    for (const [sideA, sideB] of splits) {
-      const partnerScore = (partnerHist[previewPairKey(...sideA)] || 0) + (partnerHist[previewPairKey(...sideB)] || 0);
-      let oppScore = 0;
-      for (const x of sideA) for (const y of sideB) oppScore += opponentHist[previewPairKey(x, y)] || 0;
-      const repeatScore = partnerScore * 2 + oppScore;
-      const exactCount = (matchHistory && matchHistory[previewMatchSig(sideA, sideB)]) || 0;
-      const posSum = combo.reduce((s, id) => s + posIndex[id], 0);
-      const key = [repeatScore, exactCount, posSum];
-      const cmp = bestKey ? previewCmpKey(key, bestKey) : -1;
-      if (!bestKey || cmp < 0) { bestKey = key; candidates = [{ sideA, sideB }]; }
-      else if (cmp === 0) candidates.push({ sideA, sideB });
-    }
-  }
-  if (candidates.length === 0) return null;
-  return candidates[Math.floor(Math.random() * candidates.length)];
-}
-
-// Given the current state and a court with a game in progress, predict what
-// the next match on that court would be if this game ended right now.
-function previewNextMatch(state, court) {
-  if (!court.match) return null;
-  const { sideA, sideB } = court.match;
-  const mode = state.mode;
-  const units = { ...state.units };
-  const order = state.orderCounter;
-  [...sideA, ...sideB].forEach((id) => {
-    units[id] = { ...units[id], gamesPlayed: units[id].gamesPlayed + 1, onCourt: false, lastFinishedOrder: order };
-  });
-  const opponentHist = { ...state.opponentHist };
-  sideA.forEach((a) => sideB.forEach((b) => { const k = previewPairKey(a, b); opponentHist[k] = (opponentHist[k] || 0) + 1; }));
-  const partnerHist = { ...state.partnerHist };
-  if (mode === "individual") {
-    if (sideA.length === 2) { const k = previewPairKey(...sideA); partnerHist[k] = (partnerHist[k] || 0) + 1; }
-    if (sideB.length === 2) { const k = previewPairKey(...sideB); partnerHist[k] = (partnerHist[k] || 0) + 1; }
-  }
-  const matchHistory = { ...state.matchHistory };
-  const msig = previewMatchSig(sideA, sideB);
-  matchHistory[msig] = (matchHistory[msig] || 0) + 1;
-
-  const waitingIds = computeWaitingIds(units);
-  const result = previewPickBest(waitingIds, units, mode, opponentHist, partnerHist, matchHistory);
-  return result;
-}
-
 function standingsRows(state) {
   return Object.values(state.units).slice().sort((a, b) => {
     const aWinPct = a.gamesPlayed ? a.wins / a.gamesPlayed : 0;
@@ -709,7 +590,6 @@ function CourtsTab({ state, dispatch }) {
   };
 
   const waitingIds = computeWaitingIds(state.units);
-  const singleCourt = state.courtsState.length === 1;
 
   return (
     <div className="pbr-courts-tab">
@@ -743,7 +623,6 @@ function CourtsTab({ state, dispatch }) {
               onSubmit={() => submit(court.id)}
               editing={editingCourtId === court.id}
               dispatch={dispatch}
-              showNextUp={singleCourt}
             />
           )}
         </div>
@@ -773,11 +652,11 @@ function LineupSlot({ unitId, courtId, state, waitingIds, dispatch }) {
   );
 }
 
-function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch, showNextUp }) {
+function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch }) {
   const { sideA, sideB } = court.match;
   const canSubmit = draft.a !== draft.b;
   const waitingIds = editing ? computeWaitingIds(state.units) : [];
-  const nextUp = showNextUp && !editing ? previewNextMatch(state, court) : null;
+  const nextUp = !editing ? court.nextPreview : null;
 
   return (
     <div className="pbr-match">

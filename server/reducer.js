@@ -130,19 +130,80 @@ function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHi
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
-function fillAllEmptyCourts(courtsState, unitsIn, mode, opponentHist, partnerHist, matchHistory) {
+function fillAllEmptyCourts(courtsState, unitsIn, mode, opponentHist, partnerHist, matchHistory, preferredMatches) {
   const units = { ...unitsIn };
   const courts = courtsState.map((c) => ({ ...c }));
   for (const court of courts) {
     if (court.match) continue;
-    const waitingIds = computeWaitingIds(units);
-    const result = pickBest(waitingIds, units, mode, opponentHist, partnerHist, matchHistory);
+    let result = null;
+    const preferred = preferredMatches && preferredMatches[court.id];
+    if (preferred && isPreferredValid(preferred, units)) {
+      result = preferred;
+    } else {
+      const waitingIds = computeWaitingIds(units);
+      result = pickBest(waitingIds, units, mode, opponentHist, partnerHist, matchHistory);
+    }
     if (!result) continue;
     const { sideA, sideB } = result;
     [...sideA, ...sideB].forEach((id) => { units[id] = { ...units[id], onCourt: true }; });
     court.match = { sideA, sideB, startedAt: Date.now() };
   }
   return { courts, units };
+}
+
+// A previously-committed "next match" preview is only safe to reuse as-is
+// if every one of its players is still exactly where the preview assumed:
+// active and not already claimed by another court in the meantime.
+function isPreferredValid(preferred, unitsMap) {
+  if (!preferred || !Array.isArray(preferred.sideA) || !Array.isArray(preferred.sideB)) return false;
+  const ids = [...preferred.sideA, ...preferred.sideB];
+  return ids.every((id) => unitsMap[id] && unitsMap[id].active && !unitsMap[id].onCourt);
+}
+
+// Predicts what would be scheduled next on a court if its current game ended
+// right now, by running the exact same scheduling logic against a
+// hypothetical "this game just finished" state. This is only meaningful
+// (and only guaranteed accurate) when there's exactly one court, since with
+// more than one court the outcome can depend on what happens on the others
+// in between.
+function computeNextPreview(state, court) {
+  if (!court.match) return null;
+  const { sideA, sideB } = court.match;
+  const units = { ...state.units };
+  const order = state.orderCounter;
+  [...sideA, ...sideB].forEach((id) => {
+    units[id] = { ...units[id], gamesPlayed: units[id].gamesPlayed + 1, onCourt: false, lastFinishedOrder: order };
+  });
+  const opponentHist = { ...state.opponentHist };
+  sideA.forEach((a) => sideB.forEach((b) => { const k = pairKey(a, b); opponentHist[k] = (opponentHist[k] || 0) + 1; }));
+  const partnerHist = { ...state.partnerHist };
+  if (state.mode === "individual") {
+    if (sideA.length === 2) { const k = pairKey(...sideA); partnerHist[k] = (partnerHist[k] || 0) + 1; }
+    if (sideB.length === 2) { const k = pairKey(...sideB); partnerHist[k] = (partnerHist[k] || 0) + 1; }
+  }
+  const matchHistory = { ...state.matchHistory };
+  const msig = matchSig(sideA, sideB);
+  matchHistory[msig] = (matchHistory[msig] || 0) + 1;
+  const waitingIds = computeWaitingIds(units);
+  return pickBest(waitingIds, units, state.mode, opponentHist, partnerHist, matchHistory);
+}
+
+// Recomputes and commits the "next match" preview for the sole court,
+// whenever something that could change it just happened (a new game
+// started, a lineup swap, a player added, someone benched/unbenched). The
+// SAME committed object is what SUBMIT_SCORE will later hand to
+// fillAllEmptyCourts as the preferred match, so as long as nothing
+// invalidating happens between now and then, what gets shown is exactly
+// what gets scheduled — not just a probable guess.
+function withNextPreview(state) {
+  if (state.phase !== "session" || state.courtsState.length !== 1) return state;
+  const court = state.courtsState[0];
+  if (!court.match) {
+    if (!("nextPreview" in court) || court.nextPreview === undefined) return state;
+    return { ...state, courtsState: [{ ...court, nextPreview: undefined }] };
+  }
+  const preview = computeNextPreview(state, court);
+  return { ...state, courtsState: [{ ...court, nextPreview: preview || undefined }] };
 }
 
 export const initialState = {
@@ -299,7 +360,7 @@ export function reducer(state, action) {
       });
       const courtsState = Array.from({ length: state.courtCount }, (_, i) => ({ id: i, name: (state.courtNames && state.courtNames[i]) || `Court ${i + 1}`, match: null }));
       const filled = fillAllEmptyCourts(courtsState, units, state.mode, {}, {}, {});
-      return { ...state, phase: "session", units: filled.units, courtsState: filled.courts, opponentHist: {}, partnerHist: {}, matchHistory: {}, log: [], orderCounter: 0 };
+      return withNextPreview({ ...state, phase: "session", units: filled.units, courtsState: filled.courts, opponentHist: {}, partnerHist: {}, matchHistory: {}, log: [], orderCounter: 0 });
     }
 
     case "SUBMIT_SCORE": {
@@ -351,9 +412,14 @@ export function reducer(state, action) {
       const durationMs = Math.max(0, endedAt - startedAt);
       const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: endedAt, startedAt, durationMs, sittingOut };
       let courtsState = state.courtsState.map((c) => (c.id === courtId ? { ...c, match: null } : c));
-      const filled = fillAllEmptyCourts(courtsState, units, state.mode, opponentHist, partnerHist, matchHistory);
+      // If we already committed to a "next match" preview for this court and
+      // nothing has invalidated it since, honor that exact match rather than
+      // letting the scheduler pick independently — that's what makes the
+      // preview a guarantee instead of a guess.
+      const preferredMatches = court.nextPreview ? { [courtId]: court.nextPreview } : undefined;
+      const filled = fillAllEmptyCourts(courtsState, units, state.mode, opponentHist, partnerHist, matchHistory, preferredMatches);
 
-      return { ...state, units: filled.units, courtsState: filled.courts, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1 };
+      return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1 });
     }
 
     case "UNDO_LAST": {
@@ -397,7 +463,7 @@ export function reducer(state, action) {
 
       const courtsState = state.courtsState.map((c) => (c.id === lastEntry.courtId ? { ...c, match: { sideA: lastEntry.sideA, sideB: lastEntry.sideB, startedAt: lastEntry.startedAt } } : c));
 
-      return { ...state, units, opponentHist, partnerHist, matchHistory, courtsState, log: state.log.slice(0, -1) };
+      return withNextPreview({ ...state, units, opponentHist, partnerHist, matchHistory, courtsState, log: state.log.slice(0, -1) });
     }
 
     case "TOGGLE_ACTIVE": {
@@ -405,7 +471,7 @@ export function reducer(state, action) {
       if (!u || u.onCourt) return state;
       const units = { ...state.units, [action.id]: { ...u, active: !u.active } };
       const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
-      return { ...state, units: filled.units, courtsState: filled.courts };
+      return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts });
     }
 
     case "SWAP_LINEUP": {
@@ -438,7 +504,7 @@ export function reducer(state, action) {
       units[outUnitId] = { ...units[outUnitId], onCourt: false, lastFinishedOrder: state.orderCounter };
       units[inUnitId] = { ...units[inUnitId], onCourt: true };
 
-      return { ...state, courtsState, units, orderCounter: state.orderCounter + 1 };
+      return withNextPreview({ ...state, courtsState, units, orderCounter: state.orderCounter + 1 });
     }
 
     case "ADD_UNIT_MIDSESSION": {
@@ -449,7 +515,7 @@ export function reducer(state, action) {
       const id = rid(state.mode === "fixed" ? "t" : "p");
       const units = { ...state.units, [id]: { id, name, gamesPlayed: gp, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastFinishedOrder: state.orderCounter, order: state.orderCounter } };
       const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
-      return { ...state, units: filled.units, courtsState: filled.courts, orderCounter: state.orderCounter + 1 };
+      return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts, orderCounter: state.orderCounter + 1 });
     }
 
     case "SET_COURT_COUNT_MIDSESSION": {
@@ -462,7 +528,7 @@ export function reducer(state, action) {
         courtsState = courtsState.filter((c) => !removable.includes(c.id));
       }
       const filled = fillAllEmptyCourts(courtsState, state.units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
-      return { ...state, courtsState: filled.courts, units: filled.units, courtCount: filled.courts.length };
+      return withNextPreview({ ...state, courtsState: filled.courts, units: filled.units, courtCount: filled.courts.length });
     }
 
     default:
