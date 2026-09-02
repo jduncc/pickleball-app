@@ -340,10 +340,16 @@ export function reducer(state, action) {
       const msig = matchSig(sideA, sideB);
       matchHistory[msig] = (matchHistory[msig] || 0) + 1;
 
+      // Who was sitting out while this game was played: everyone not on
+      // this court and not on another court right now (captured at the
+      // moment this game ends, so it reflects any mid-game lineup swaps).
+      const playingIds = new Set([...sideA, ...sideB]);
+      const sittingOut = Object.keys(units).filter((id) => !playingIds.has(id) && !units[id].onCourt);
+
       const endedAt = Date.now();
       const startedAt = court.match.startedAt || endedAt;
       const durationMs = Math.max(0, endedAt - startedAt);
-      const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: endedAt, startedAt, durationMs };
+      const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: endedAt, startedAt, durationMs, sittingOut };
       let courtsState = state.courtsState.map((c) => (c.id === courtId ? { ...c, match: null } : c));
       const filled = fillAllEmptyCourts(courtsState, units, state.mode, opponentHist, partnerHist, matchHistory);
 

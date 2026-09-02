@@ -69,18 +69,19 @@ function buildSessionCSV(state, label) {
   if (avgMs !== null) lines.push(`Average game length,${formatDuration(avgMs)}`);
   lines.push("");
   lines.push("STANDINGS");
-  lines.push(csvLine(["Rank", who, "Wins", "Losses", "Points For", "Points Against", "Diff"]));
+  lines.push(csvLine(["Rank", who, "GP", "Wins", "Losses", "Points For", "Points Against", "Diff"]));
   standingsRows(state).forEach((u, i) => {
-    lines.push(csvLine([i + 1, u.name, u.wins, u.losses, u.pointsFor, u.pointsAgainst, u.pointsFor - u.pointsAgainst]));
+    lines.push(csvLine([i + 1, u.name, u.gamesPlayed, u.wins, u.losses, u.pointsFor, u.pointsAgainst, u.pointsFor - u.pointsAgainst]));
   });
   lines.push("");
   lines.push("GAME LOG");
-  lines.push(csvLine(["Game #", "Court", "Side A", "Score A", "Score B", "Side B", "Winner", "Duration"]));
+  lines.push(csvLine(["Game #", "Court", "Side A", "Score A", "Score B", "Side B", "Winner", "Duration", "Who sat out"]));
   state.log.forEach((e, i) => {
     const aWon = e.scoreA > e.scoreB;
     const aNames = sideLabel(state.units, e.sideA);
     const bNames = sideLabel(state.units, e.sideB);
-    lines.push(csvLine([i + 1, courtLabel(state.courtsState, e.courtId), aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs)]));
+    const sittingOutNames = (e.sittingOut || []).map((id) => unitName(state.units, id)).join(", ");
+    lines.push(csvLine([i + 1, courtLabel(state.courtsState, e.courtId), aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs), sittingOutNames]));
   });
   return lines.join("\n");
 }
@@ -163,10 +164,10 @@ function buildSessionPDF(state, label) {
 
   autoTable(doc, {
     startY: y + 8,
-    head: [["#", who, "W", "L", "PF", "PA", "Diff"]],
+    head: [["#", who, "GP", "W", "L", "PF", "PA", "Diff"]],
     body: rows.map((u, i) => {
       const diff = u.pointsFor - u.pointsAgainst;
-      return [i + 1, u.name, u.wins, u.losses, u.pointsFor, u.pointsAgainst, (diff >= 0 ? "+" : "") + diff];
+      return [i + 1, u.name, u.gamesPlayed, u.wins, u.losses, u.pointsFor, u.pointsAgainst, (diff >= 0 ? "+" : "") + diff];
     }),
     theme: "striped",
     headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold" },
@@ -763,13 +764,14 @@ function StandingsTab({ state }) {
       <section className="pbr-card pbr-card-flush">
         <table className="pbr-table">
           <thead>
-            <tr><th>#</th><th>{state.mode === "fixed" ? "Team" : "Player"}</th><th>W</th><th>L</th><th>PF</th><th>PA</th><th>Diff</th></tr>
+            <tr><th>#</th><th>{state.mode === "fixed" ? "Team" : "Player"}</th><th>GP</th><th>W</th><th>L</th><th>PF</th><th>PA</th><th>Diff</th></tr>
           </thead>
           <tbody>
             {rows.map((u, i) => (
               <tr key={u.id} className={!u.active ? "pbr-row-inactive" : ""}>
                 <td>{i + 1}</td>
                 <td>{u.name}</td>
+                <td>{u.gamesPlayed}</td>
                 <td>{u.wins}</td>
                 <td>{u.losses}</td>
                 <td>{u.pointsFor}</td>
@@ -853,13 +855,14 @@ function HistoryList({ history, onReuse }) {
               <div className="pbr-history-detail">
                 <table className="pbr-table">
                   <thead>
-                    <tr><th>#</th><th>{h.mode === "fixed" ? "Team" : "Player"}</th><th>W</th><th>L</th><th>Diff</th></tr>
+                    <tr><th>#</th><th>{h.mode === "fixed" ? "Team" : "Player"}</th><th>GP</th><th>W</th><th>L</th><th>Diff</th></tr>
                   </thead>
                   <tbody>
                     {rows.map((u, i) => (
                       <tr key={u.id}>
                         <td>{i + 1}</td>
                         <td>{u.name}</td>
+                        <td>{u.gamesPlayed}</td>
                         <td>{u.wins}</td>
                         <td>{u.losses}</td>
                         <td className={u.pointsFor - u.pointsAgainst > 0 ? "pbr-pos" : u.pointsFor - u.pointsAgainst < 0 ? "pbr-neg" : ""}>{u.pointsFor - u.pointsAgainst > 0 ? "+" : ""}{u.pointsFor - u.pointsAgainst}</td>
