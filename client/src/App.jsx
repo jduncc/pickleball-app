@@ -690,9 +690,15 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch
         </button>
       )}
       {nextUp && (
-        <p className="pbr-next-up">
-          <strong>Next up:</strong> {sideLabel(state.units, nextUp.sideA)} vs {sideLabel(state.units, nextUp.sideB)}
-        </p>
+        <div className="pbr-next-up">
+          <p>
+            <strong>Next up:</strong> {sideLabel(state.units, nextUp.sideA)} vs {sideLabel(state.units, nextUp.sideB)}
+            {nextUp.repeat ? " (repeat)" : ""}
+          </p>
+          {nextUp.sittingOut && nextUp.sittingOut.length > 0 && (
+            <p className="pbr-next-up-sitting">Sitting out: {nextUp.sittingOut.map((id) => unitName(state.units, id)).join(", ")}</p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1053,7 +1059,9 @@ function Styles() {
       .pbr-lineup-select { background: var(--navy); border: 1px solid var(--yellow); color: var(--chalk); border-radius: 8px; padding: 8px 9px; font-size: 13.5px; font-family: inherit; width: 100%; }
       .pbr-lineup-hint { margin-top: 14px; text-align: center; }
       .pbr-next-up { margin-top: 12px; text-align: center; font-size: 12.5px; color: var(--chalk-dim); border-top: 1px dashed var(--navy-3); padding-top: 10px; }
+      .pbr-next-up p { margin: 0; }
       .pbr-next-up strong { color: var(--yellow); font-weight: 700; }
+      .pbr-next-up-sitting { margin-top: 4px !important; opacity: 0.85; }
       .pbr-vs { text-align: center; font-size: 11px; color: var(--chalk-dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 0; }
       .pbr-score-stepper .pbr-score-val { font-family: 'Space Grotesk', sans-serif; font-weight: 900; font-size: 26px; min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
       .pbr-btn-trophy { color: var(--yellow); margin-right: 2px; }

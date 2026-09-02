@@ -185,7 +185,18 @@ function computeNextPreview(state, court) {
   const msig = matchSig(sideA, sideB);
   matchHistory[msig] = (matchHistory[msig] || 0) + 1;
   const waitingIds = computeWaitingIds(units);
-  return pickBest(waitingIds, units, state.mode, opponentHist, partnerHist, matchHistory);
+  const result = pickBest(waitingIds, units, state.mode, opponentHist, partnerHist, matchHistory);
+  if (!result) return null;
+
+  // Who'd be sitting out for that predicted match, and whether that exact
+  // matchup has already happened earlier this session (checked against
+  // matchHistory as it stands once the CURRENT game finishes, i.e. before
+  // the predicted one has actually been played).
+  const nextPlayingIds = new Set([...result.sideA, ...result.sideB]);
+  const sittingOut = Object.keys(units).filter((id) => !nextPlayingIds.has(id) && !units[id].onCourt);
+  const repeat = (matchHistory[matchSig(result.sideA, result.sideB)] || 0) > 0;
+
+  return { sideA: result.sideA, sideB: result.sideB, sittingOut, repeat };
 }
 
 // Recomputes and commits the "next match" preview for the sole court,
