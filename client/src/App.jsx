@@ -33,6 +33,23 @@ function standingsRows(state) {
   });
 }
 
+function formatDuration(ms) {
+  if (typeof ms !== "number" || isNaN(ms) || ms < 0) return "—";
+  const totalSeconds = Math.round(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function averageDurationMs(log) {
+  const timed = log.filter((e) => typeof e.durationMs === "number");
+  if (timed.length === 0) return null;
+  return timed.reduce((sum, e) => sum + e.durationMs, 0) / timed.length;
+}
+
 /* ---------------------------------------------------------------------- */
 /* CSV export                                                              */
 /* ---------------------------------------------------------------------- */
@@ -48,6 +65,8 @@ function buildSessionCSV(state, label) {
   const lines = [];
   lines.push(`Session results${label ? " - " + label : ""}`);
   lines.push(`Format,${state.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}`);
+  const avgMs = averageDurationMs(state.log);
+  if (avgMs !== null) lines.push(`Average game length,${formatDuration(avgMs)}`);
   lines.push("");
   lines.push("STANDINGS");
   lines.push(csvLine(["Rank", who, "Wins", "Losses", "Points For", "Points Against", "Diff"]));
@@ -56,12 +75,12 @@ function buildSessionCSV(state, label) {
   });
   lines.push("");
   lines.push("GAME LOG");
-  lines.push(csvLine(["Game #", "Court", "Side A", "Score A", "Score B", "Side B", "Winner"]));
+  lines.push(csvLine(["Game #", "Court", "Side A", "Score A", "Score B", "Side B", "Winner", "Duration"]));
   state.log.forEach((e, i) => {
     const aWon = e.scoreA > e.scoreB;
     const aNames = sideLabel(state.units, e.sideA);
     const bNames = sideLabel(state.units, e.sideB);
-    lines.push(csvLine([i + 1, courtLabel(state.courtsState, e.courtId), aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames]));
+    lines.push(csvLine([i + 1, courtLabel(state.courtsState, e.courtId), aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs)]));
   });
   return lines.join("\n");
 }
@@ -112,8 +131,10 @@ function buildSessionPDF(state, label) {
   doc.setTextColor(...PDF_DIM);
   const dateLabel = label || new Date().toLocaleDateString();
   const gameWord = state.log.length === 1 ? "game" : "games";
+  const avgMs = averageDurationMs(state.log);
+  const avgSuffix = avgMs !== null ? `  \u00b7  avg ${formatDuration(avgMs)}/game` : "";
   doc.text(
-    `${dateLabel}  \u00b7  ${state.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}  \u00b7  ${state.log.length} ${gameWord}`,
+    `${dateLabel}  \u00b7  ${state.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}  \u00b7  ${state.log.length} ${gameWord}${avgSuffix}`,
     marginX,
     y
   );
@@ -169,12 +190,12 @@ function buildSessionPDF(state, label) {
 
   autoTable(doc, {
     startY: afterY + 8,
-    head: [["Game", "Court", "Side A", "Score", "Side B", "Winner"]],
+    head: [["Game", "Court", "Side A", "Score", "Side B", "Winner", "Duration"]],
     body: state.log.map((e, i) => {
       const aWon = e.scoreA > e.scoreB;
       const aNames = sideLabel(state.units, e.sideA);
       const bNames = sideLabel(state.units, e.sideB);
-      return [i + 1, courtLabel(state.courtsState, e.courtId), aNames, `${e.scoreA} \u2013 ${e.scoreB}`, bNames, aWon ? aNames : bNames];
+      return [i + 1, courtLabel(state.courtsState, e.courtId), aNames, `${e.scoreA} \u2013 ${e.scoreB}`, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs)];
     }),
     theme: "striped",
     headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold" },
@@ -784,7 +805,7 @@ function LogTab({ state, history, dispatch }) {
             const aWon = e.scoreA > e.scoreB;
             return (
               <li key={e.id} className="pbr-log-row">
-                <span className="pbr-log-court">{courtLabel(state.courtsState, e.courtId)}</span>
+                <span className="pbr-log-court">{courtLabel(state.courtsState, e.courtId)}{typeof e.durationMs === "number" ? ` · ${formatDuration(e.durationMs)}` : ""}</span>
                 <span className={"pbr-log-side" + (aWon ? " won" : "")}>{sideLabel(state.units, e.sideA)}</span>
                 <span className="pbr-log-score">{e.scoreA} – {e.scoreB}</span>
                 <span className={"pbr-log-side" + (!aWon ? " won" : "")}>{sideLabel(state.units, e.sideB)}</span>

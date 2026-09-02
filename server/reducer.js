@@ -35,46 +35,75 @@ export function computeWaitingIds(units) {
 }
 
 function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHistory) {
-  const poolSize = Math.min(waitingIds.length, 8);
-  const pool = waitingIds.slice(0, poolSize);
+  const required = mode === "fixed" ? 2 : 4; // units needed to fill this court
+  if (waitingIds.length < required) return null;
 
-  // We rank candidate matchups by [repeatScore, exactMatchCount, gamesPlayedSum]:
-  // how many times this pairing has happened, then whether this exact full
-  // match (both complete sides) has been played before, then how much these
-  // units are "owed" a game. Ties on all three are still possible, and we
-  // deliberately don't break those with a fixed rule — that used to pick the
-  // same option every time, which looks like the schedule repeating itself.
-  // Instead we collect every tied candidate and pick randomly among them, so
-  // equally-fair options actually vary game to game.
+  const posIndex = {};
+  waitingIds.forEach((id, i) => (posIndex[id] = i));
+
+  // Fairness comes first and is non-negotiable, on TWO dimensions:
+  //   1. games played (fewer games = more overdue to play)
+  //   2. among players tied on games played, how long they've been waiting
+  //      since they last played (older lastFinishedOrder = more overdue)
+  // waitingIds is already sorted by exactly (gamesPlayed, lastFinishedOrder,
+  // order), so anyone whose (gamesPlayed, lastFinishedOrder) is strictly
+  // better than the cutoff MUST play this round — no pairing-variety
+  // preference is allowed to bump them for someone less overdue. Handling
+  // only dimension 1 isn't enough: once several players are tied on games
+  // played (which happens constantly, e.g. once everyone's played the same
+  // number of rounds), whoever sat out most recently still needs a hard
+  // guarantee, or they can get skipped for pairing variety and end up
+  // sitting out two rounds in a row. Only players tied on BOTH dimensions
+  // are "contested" — free to be arranged for pairing variety and
+  // randomized among ties.
+  const cutoffUnit = unitsMap[waitingIds[required - 1]];
+  const cutoffGP = cutoffUnit.gamesPlayed;
+  const cutoffLFO = cutoffUnit.lastFinishedOrder;
+  const mandatory = waitingIds.filter((id) => {
+    const u = unitsMap[id];
+    return u.gamesPlayed < cutoffGP || (u.gamesPlayed === cutoffGP && u.lastFinishedOrder < cutoffLFO);
+  });
+  let contested = waitingIds.filter((id) => {
+    const u = unitsMap[id];
+    return u.gamesPlayed === cutoffGP && u.lastFinishedOrder === cutoffLFO;
+  });
+  // Cap the contested-candidate search only as a safety valve against truly
+  // pathological input sizes (hundreds of people waiting for one court).
+  // A tighter cap here is a real fairness bug: once a session runs long
+  // enough that many players become exactly tied on games played (which
+  // happens naturally and often), a small cap can arbitrarily exclude
+  // someone who's just as overdue to play as everyone else, letting them
+  // sit out again unfairly. 30 comfortably covers any realistic group size
+  // while keeping the combinatorial search fast.
+  if (contested.length > 30) contested = contested.slice(0, 30);
+  const slotsToFill = required - mandatory.length;
+  const contestedCombos = combinations(contested, slotsToFill);
+
   if (mode === "fixed") {
-    if (pool.length < 2) return null;
     let bestKey = null;
     let candidates = [];
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        const a = pool[i], b = pool[j];
-        const repeatScore = opponentHist[pairKey(a, b)] || 0;
-        const exactCount = (matchHistory && matchHistory[matchSig([a], [b])]) || 0;
-        const gp = unitsMap[a].gamesPlayed + unitsMap[b].gamesPlayed;
-        const key = [repeatScore, exactCount, gp];
-        const cmp = bestKey ? cmpKey(key, bestKey) : -1;
-        if (!bestKey || cmp < 0) {
-          bestKey = key;
-          candidates = [{ sideA: [a], sideB: [b] }];
-        } else if (cmp === 0) {
-          candidates.push({ sideA: [a], sideB: [b] });
-        }
+    for (const chosen of contestedCombos) {
+      const [a, b] = [...mandatory, ...chosen];
+      const repeatScore = opponentHist[pairKey(a, b)] || 0;
+      const exactCount = (matchHistory && matchHistory[matchSig([a], [b])]) || 0;
+      const posSum = posIndex[a] + posIndex[b];
+      const key = [repeatScore, exactCount, posSum];
+      const cmp = bestKey ? cmpKey(key, bestKey) : -1;
+      if (!bestKey || cmp < 0) {
+        bestKey = key;
+        candidates = [{ sideA: [a], sideB: [b] }];
+      } else if (cmp === 0) {
+        candidates.push({ sideA: [a], sideB: [b] });
       }
     }
     if (candidates.length === 0) return null;
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  if (pool.length < 4) return null;
   let bestKey = null;
   let candidates = [];
-  const combos = combinations(pool, 4);
-  for (const combo of combos) {
+  for (const chosen of contestedCombos) {
+    const combo = [...mandatory, ...chosen];
     const splits = [
       [[combo[0], combo[1]], [combo[2], combo[3]]],
       [[combo[0], combo[2]], [combo[1], combo[3]]],
@@ -86,8 +115,8 @@ function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHi
       for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
       const repeatScore = partnerScore * 2 + oppScore;
       const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
-      const gp = combo.reduce((s, id) => s + unitsMap[id].gamesPlayed, 0);
-      const key = [repeatScore, exactCount, gp];
+      const posSum = combo.reduce((s, id) => s + posIndex[id], 0);
+      const key = [repeatScore, exactCount, posSum];
       const cmp = bestKey ? cmpKey(key, bestKey) : -1;
       if (!bestKey || cmp < 0) {
         bestKey = key;
@@ -111,7 +140,7 @@ function fillAllEmptyCourts(courtsState, unitsIn, mode, opponentHist, partnerHis
     if (!result) continue;
     const { sideA, sideB } = result;
     [...sideA, ...sideB].forEach((id) => { units[id] = { ...units[id], onCourt: true }; });
-    court.match = { sideA, sideB };
+    court.match = { sideA, sideB, startedAt: Date.now() };
   }
   return { courts, units };
 }
@@ -311,7 +340,10 @@ export function reducer(state, action) {
       const msig = matchSig(sideA, sideB);
       matchHistory[msig] = (matchHistory[msig] || 0) + 1;
 
-      const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: Date.now() };
+      const endedAt = Date.now();
+      const startedAt = court.match.startedAt || endedAt;
+      const durationMs = Math.max(0, endedAt - startedAt);
+      const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: endedAt, startedAt, durationMs };
       let courtsState = state.courtsState.map((c) => (c.id === courtId ? { ...c, match: null } : c));
       const filled = fillAllEmptyCourts(courtsState, units, state.mode, opponentHist, partnerHist, matchHistory);
 
@@ -357,7 +389,7 @@ export function reducer(state, action) {
       const msig = matchSig(lastEntry.sideA, lastEntry.sideB);
       matchHistory[msig] = Math.max(0, (matchHistory[msig] || 0) - 1);
 
-      const courtsState = state.courtsState.map((c) => (c.id === lastEntry.courtId ? { ...c, match: { sideA: lastEntry.sideA, sideB: lastEntry.sideB } } : c));
+      const courtsState = state.courtsState.map((c) => (c.id === lastEntry.courtId ? { ...c, match: { sideA: lastEntry.sideA, sideB: lastEntry.sideB, startedAt: lastEntry.startedAt } } : c));
 
       return { ...state, units, opponentHist, partnerHist, matchHistory, courtsState, log: state.log.slice(0, -1) };
     }
@@ -392,7 +424,7 @@ export function reducer(state, action) {
       else if (court.match.sideB.includes(outUnitId)) { side = "sideB"; slotIdx = court.match.sideB.indexOf(outUnitId); }
       if (!side) return state;
 
-      const newMatch = { sideA: [...court.match.sideA], sideB: [...court.match.sideB] };
+      const newMatch = { sideA: [...court.match.sideA], sideB: [...court.match.sideB], startedAt: court.match.startedAt };
       newMatch[side][slotIdx] = inUnitId;
 
       const courtsState = state.courtsState.map((c, i) => (i === courtIdx ? { ...c, match: newMatch } : c));
