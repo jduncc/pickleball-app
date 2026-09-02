@@ -22,6 +22,125 @@ function courtLabel(courtsState, courtId) {
   return c && c.name ? c.name : `Court ${courtId + 1}`;
 }
 
+/* ---------------------------------------------------------------------- */
+/* "Next up" preview — a client-side best guess, NOT authoritative. The    */
+/* server is always the one that actually schedules the next match once   */
+/* a score is submitted; this just mirrors that same logic against a      */
+/* hypothetical "this court's game just ended" state so we can show a     */
+/* preview while the score is still being entered. Ties broken by         */
+/* randomness server-side can occasionally make the real result differ.   */
+/* ---------------------------------------------------------------------- */
+
+const previewPairKey = (a, b) => [a, b].sort().join("|");
+const previewMatchSig = (sideA, sideB) => {
+  const a = [...sideA].sort().join(",");
+  const b = [...sideB].sort().join(",");
+  return [a, b].sort().join("|");
+};
+function previewCombinations(arr, k) {
+  const res = [];
+  const rec = (start, combo) => {
+    if (combo.length === k) { res.push(combo.slice()); return; }
+    for (let i = start; i < arr.length; i++) { combo.push(arr[i]); rec(i + 1, combo); combo.pop(); }
+  };
+  rec(0, []);
+  return res;
+}
+const previewCmpKey = (a, b) => {
+  for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) return a[i] - b[i]; }
+  return 0;
+};
+
+function previewPickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHistory) {
+  const required = mode === "fixed" ? 2 : 4;
+  if (waitingIds.length < required) return null;
+  const posIndex = {};
+  waitingIds.forEach((id, i) => (posIndex[id] = i));
+  const cutoffUnit = unitsMap[waitingIds[required - 1]];
+  const cutoffGP = cutoffUnit.gamesPlayed;
+  const cutoffLFO = cutoffUnit.lastFinishedOrder;
+  const mandatory = waitingIds.filter((id) => {
+    const u = unitsMap[id];
+    return u.gamesPlayed < cutoffGP || (u.gamesPlayed === cutoffGP && u.lastFinishedOrder < cutoffLFO);
+  });
+  let contested = waitingIds.filter((id) => {
+    const u = unitsMap[id];
+    return u.gamesPlayed === cutoffGP && u.lastFinishedOrder === cutoffLFO;
+  });
+  if (contested.length > 30) contested = contested.slice(0, 30);
+  const slotsToFill = required - mandatory.length;
+  const contestedCombos = previewCombinations(contested, slotsToFill);
+
+  if (mode === "fixed") {
+    let bestKey = null;
+    let candidates = [];
+    for (const chosen of contestedCombos) {
+      const [a, b] = [...mandatory, ...chosen];
+      const repeatScore = opponentHist[previewPairKey(a, b)] || 0;
+      const exactCount = (matchHistory && matchHistory[previewMatchSig([a], [b])]) || 0;
+      const posSum = posIndex[a] + posIndex[b];
+      const key = [repeatScore, exactCount, posSum];
+      const cmp = bestKey ? previewCmpKey(key, bestKey) : -1;
+      if (!bestKey || cmp < 0) { bestKey = key; candidates = [{ sideA: [a], sideB: [b] }]; }
+      else if (cmp === 0) candidates.push({ sideA: [a], sideB: [b] });
+    }
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  let bestKey = null;
+  let candidates = [];
+  for (const chosen of contestedCombos) {
+    const combo = [...mandatory, ...chosen];
+    const splits = [
+      [[combo[0], combo[1]], [combo[2], combo[3]]],
+      [[combo[0], combo[2]], [combo[1], combo[3]]],
+      [[combo[0], combo[3]], [combo[1], combo[2]]],
+    ];
+    for (const [sideA, sideB] of splits) {
+      const partnerScore = (partnerHist[previewPairKey(...sideA)] || 0) + (partnerHist[previewPairKey(...sideB)] || 0);
+      let oppScore = 0;
+      for (const x of sideA) for (const y of sideB) oppScore += opponentHist[previewPairKey(x, y)] || 0;
+      const repeatScore = partnerScore * 2 + oppScore;
+      const exactCount = (matchHistory && matchHistory[previewMatchSig(sideA, sideB)]) || 0;
+      const posSum = combo.reduce((s, id) => s + posIndex[id], 0);
+      const key = [repeatScore, exactCount, posSum];
+      const cmp = bestKey ? previewCmpKey(key, bestKey) : -1;
+      if (!bestKey || cmp < 0) { bestKey = key; candidates = [{ sideA, sideB }]; }
+      else if (cmp === 0) candidates.push({ sideA, sideB });
+    }
+  }
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+// Given the current state and a court with a game in progress, predict what
+// the next match on that court would be if this game ended right now.
+function previewNextMatch(state, court) {
+  if (!court.match) return null;
+  const { sideA, sideB } = court.match;
+  const mode = state.mode;
+  const units = { ...state.units };
+  const order = state.orderCounter;
+  [...sideA, ...sideB].forEach((id) => {
+    units[id] = { ...units[id], gamesPlayed: units[id].gamesPlayed + 1, onCourt: false, lastFinishedOrder: order };
+  });
+  const opponentHist = { ...state.opponentHist };
+  sideA.forEach((a) => sideB.forEach((b) => { const k = previewPairKey(a, b); opponentHist[k] = (opponentHist[k] || 0) + 1; }));
+  const partnerHist = { ...state.partnerHist };
+  if (mode === "individual") {
+    if (sideA.length === 2) { const k = previewPairKey(...sideA); partnerHist[k] = (partnerHist[k] || 0) + 1; }
+    if (sideB.length === 2) { const k = previewPairKey(...sideB); partnerHist[k] = (partnerHist[k] || 0) + 1; }
+  }
+  const matchHistory = { ...state.matchHistory };
+  const msig = previewMatchSig(sideA, sideB);
+  matchHistory[msig] = (matchHistory[msig] || 0) + 1;
+
+  const waitingIds = computeWaitingIds(units);
+  const result = previewPickBest(waitingIds, units, mode, opponentHist, partnerHist, matchHistory);
+  return result;
+}
+
 function standingsRows(state) {
   return Object.values(state.units).slice().sort((a, b) => {
     const aWinPct = a.gamesPlayed ? a.wins / a.gamesPlayed : 0;
@@ -589,10 +708,17 @@ function CourtsTab({ state, dispatch }) {
     setDrafts((prev) => { const n = { ...prev }; delete n[courtId]; return n; });
   };
 
-  const waitingCount = computeWaitingIds(state.units).length;
+  const waitingIds = computeWaitingIds(state.units);
+  const singleCourt = state.courtsState.length === 1;
 
   return (
     <div className="pbr-courts-tab">
+      {waitingIds.length > 0 && (
+        <div className="pbr-sitting-banner">
+          <Coffee size={14} />
+          <span><strong>Sitting out ({waitingIds.length}):</strong> {waitingIds.map((id) => state.units[id].name).join(", ")}</span>
+        </div>
+      )}
       {state.courtsState.map((court) => (
         <div key={court.id} className="pbr-court-card">
           <div className="pbr-court-card-header">
@@ -607,7 +733,7 @@ function CourtsTab({ state, dispatch }) {
             )}
           </div>
           {!court.match ? (
-            <div className="pbr-court-empty"><Coffee size={18} /> Waiting for players{waitingCount > 0 ? ` (${waitingCount} in queue)` : ""}</div>
+            <div className="pbr-court-empty"><Coffee size={18} /> Waiting for players{waitingIds.length > 0 ? ` (${waitingIds.length} in queue)` : ""}</div>
           ) : (
             <CourtMatch
               court={court}
@@ -617,6 +743,7 @@ function CourtsTab({ state, dispatch }) {
               onSubmit={() => submit(court.id)}
               editing={editingCourtId === court.id}
               dispatch={dispatch}
+              showNextUp={singleCourt}
             />
           )}
         </div>
@@ -646,10 +773,11 @@ function LineupSlot({ unitId, courtId, state, waitingIds, dispatch }) {
   );
 }
 
-function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch }) {
+function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch, showNextUp }) {
   const { sideA, sideB } = court.match;
   const canSubmit = draft.a !== draft.b;
   const waitingIds = editing ? computeWaitingIds(state.units) : [];
+  const nextUp = showNextUp && !editing ? previewNextMatch(state, court) : null;
 
   return (
     <div className="pbr-match">
@@ -681,6 +809,11 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch
         <button className="pbr-btn pbr-btn-primary pbr-btn-large pbr-submit-btn" disabled={!canSubmit} onClick={onSubmit}>
           <Check size={18} /> Submit score
         </button>
+      )}
+      {nextUp && (
+        <p className="pbr-next-up">
+          <strong>Next up:</strong> {sideLabel(state.units, nextUp.sideA)} vs {sideLabel(state.units, nextUp.sideB)}
+        </p>
       )}
     </div>
   );
@@ -1027,6 +1160,8 @@ function Styles() {
       .pbr-court-name-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
       .pbr-court-name-input { font-size: 14px; padding: 9px 12px; }
       .pbr-court-empty { display: flex; align-items: center; gap: 8px; color: var(--chalk-dim); font-size: 13.5px; padding: 18px 4px; }
+      .pbr-sitting-banner { display: flex; align-items: center; gap: 8px; background: var(--navy-2); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--chalk-dim); }
+      .pbr-sitting-banner strong { color: var(--chalk); }
 
       .pbr-match { position: relative; }
       .pbr-court-svg-wrap { position: absolute; inset: 0; opacity: 0.5; pointer-events: none; color: var(--chalk-dim); }
@@ -1038,6 +1173,8 @@ function Styles() {
       .pbr-lineup-edit { display: flex; flex-direction: column; gap: 6px; flex: 1; margin-right: 10px; }
       .pbr-lineup-select { background: var(--navy); border: 1px solid var(--yellow); color: var(--chalk); border-radius: 8px; padding: 8px 9px; font-size: 13.5px; font-family: inherit; width: 100%; }
       .pbr-lineup-hint { margin-top: 14px; text-align: center; }
+      .pbr-next-up { margin-top: 12px; text-align: center; font-size: 12.5px; color: var(--chalk-dim); border-top: 1px dashed var(--navy-3); padding-top: 10px; }
+      .pbr-next-up strong { color: var(--yellow); font-weight: 700; }
       .pbr-vs { text-align: center; font-size: 11px; color: var(--chalk-dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 0; }
       .pbr-score-stepper .pbr-score-val { font-family: 'Space Grotesk', sans-serif; font-weight: 900; font-size: 26px; min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
       .pbr-btn-trophy { color: var(--yellow); margin-right: 2px; }
