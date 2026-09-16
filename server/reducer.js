@@ -239,6 +239,7 @@ export const initialState = {
   courtsState: [],
   log: [],
   orderCounter: 0,
+  shuffleArmed: false,
 };
 
 function rid(prefix) {
@@ -431,6 +432,36 @@ export function reducer(state, action) {
       const durationMs = Math.max(0, endedAt - startedAt);
       const logEntry = { id: rid("g"), courtId, sideA, sideB, scoreA, scoreB, ts: endedAt, startedAt, durationMs, sittingOut };
       let courtsState = state.courtsState.map((c) => (c.id === courtId ? { ...c, match: null } : c));
+
+      if (state.shuffleArmed) {
+        // Hold this court empty rather than refilling it right away. Once
+        // every court is simultaneously empty, everyone becomes available
+        // at once and we fill them all together from the full pool — that's
+        // what actually breaks players out of their existing court "pods".
+        // A court's startedAt only gets set the moment it's actually given
+        // a new match (inside fillAllEmptyCourts), so nobody's next game
+        // duration includes this waiting period.
+        const anyStillPlaying = courtsState.some((c) => c.match);
+        if (anyStillPlaying) {
+          return withNextPreview({ ...state, units, courtsState, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1 });
+        }
+        // Everyone is now simultaneously free, but whichever court's game
+        // ended a moment earlier left its players with a slightly older
+        // lastPlayedAt than the court that just finished — and the fairness
+        // logic would (correctly, in the normal case) treat that as "more
+        // overdue" and silently keep re-forming the same pods instead of
+        // actually mixing. For this one synchronized reshuffle, treat
+        // everyone eligible as equally free by resetting that recency
+        // signal; games-played fairness itself is untouched.
+        const normalizedUnits = { ...units };
+        Object.keys(normalizedUnits).forEach((id) => {
+          const u = normalizedUnits[id];
+          if (u.active && !u.onCourt) normalizedUnits[id] = { ...u, lastPlayedAt: 0, lastPlayedSeq: 0 };
+        });
+        const filled = fillAllEmptyCourts(courtsState, normalizedUnits, state.mode, opponentHist, partnerHist, matchHistory);
+        return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1, shuffleArmed: false });
+      }
+
       // If we already committed to a "next match" preview for this court and
       // nothing has invalidated it since, honor that exact match rather than
       // letting the scheduler pick independently — that's what makes the
@@ -439,6 +470,21 @@ export function reducer(state, action) {
       const filled = fillAllEmptyCourts(courtsState, units, state.mode, opponentHist, partnerHist, matchHistory, preferredMatches);
 
       return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1 });
+    }
+
+    case "ARM_SHUFFLE": {
+      if (state.phase !== "session" || state.courtsState.length < 2) return state;
+      const allPlaying = state.courtsState.every((c) => c.match);
+      if (!allPlaying) return state;
+      return { ...state, shuffleArmed: true };
+    }
+
+    case "CANCEL_SHUFFLE": {
+      if (!state.shuffleArmed) return state;
+      // Anything already sitting empty while we were waiting needs to be
+      // filled normally right away rather than left stranded.
+      const filled = fillAllEmptyCourts(state.courtsState, state.units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
+      return withNextPreview({ ...state, shuffleArmed: false, units: filled.units, courtsState: filled.courts });
     }
 
     case "UNDO_LAST": {
@@ -489,6 +535,7 @@ export function reducer(state, action) {
       const u = state.units[action.id];
       if (!u || u.onCourt) return state;
       const units = { ...state.units, [action.id]: { ...u, active: !u.active } };
+      if (state.shuffleArmed) return { ...state, units }; // don't disturb courts being held for the pending shuffle
       const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
       return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts });
     }
@@ -533,6 +580,7 @@ export function reducer(state, action) {
       const gp = vals.length ? Math.min(...vals.map((u) => u.gamesPlayed)) : 0;
       const id = rid(state.mode === "fixed" ? "t" : "p");
       const units = { ...state.units, [id]: { id, name, gamesPlayed: gp, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, active: true, onCourt: false, lastPlayedAt: Date.now(), lastPlayedSeq: state.orderCounter, order: state.orderCounter } };
+      if (state.shuffleArmed) return { ...state, units, orderCounter: state.orderCounter + 1 }; // don't disturb courts being held for the pending shuffle
       const filled = fillAllEmptyCourts(state.courtsState, units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
       return withNextPreview({ ...state, units: filled.units, courtsState: filled.courts, orderCounter: state.orderCounter + 1 });
     }
@@ -546,6 +594,7 @@ export function reducer(state, action) {
         const removable = [...courtsState].reverse().filter((c) => !c.match).slice(0, courtsState.length - count).map((c) => c.id);
         courtsState = courtsState.filter((c) => !removable.includes(c.id));
       }
+      if (state.shuffleArmed) return { ...state, courtsState, courtCount: courtsState.length }; // don't disturb courts being held for the pending shuffle
       const filled = fillAllEmptyCourts(courtsState, state.units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
       return withNextPreview({ ...state, courtsState: filled.courts, units: filled.units, courtCount: filled.courts.length });
     }

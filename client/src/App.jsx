@@ -576,6 +576,32 @@ function CourtLabel({ court, dispatch }) {
   );
 }
 
+function ShuffleBanner({ state, dispatch, allCourtsPlaying }) {
+  if (state.shuffleArmed) {
+    return (
+      <div className="pbr-shuffle-banner armed">
+        <Shuffle size={14} />
+        <span>Shuffle armed — waiting for every court to finish, then everyone gets reshuffled.</span>
+        <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => dispatch({ type: "CANCEL_SHUFFLE" })}>Cancel</button>
+      </div>
+    );
+  }
+  return (
+    <div className="pbr-shuffle-banner">
+      <Shuffle size={14} />
+      <span>Courts keep the same groups once everyone's split up.</span>
+      <button
+        className="pbr-btn pbr-btn-ghost pbr-btn-small"
+        disabled={!allCourtsPlaying}
+        title={allCourtsPlaying ? undefined : "All courts need an active game to arm a shuffle"}
+        onClick={() => dispatch({ type: "ARM_SHUFFLE" })}
+      >
+        <Shuffle size={14} /> Shuffle courts
+      </button>
+    </div>
+  );
+}
+
 function CourtsTab({ state, dispatch }) {
   const [drafts, setDrafts] = useState({});
   const [editingCourtId, setEditingCourtId] = useState(null);
@@ -590,6 +616,8 @@ function CourtsTab({ state, dispatch }) {
   };
 
   const waitingIds = computeWaitingIds(state.units);
+  const multiCourt = state.courtsState.length >= 2;
+  const allCourtsPlaying = multiCourt && state.courtsState.every((c) => c.match);
 
   return (
     <div className="pbr-courts-tab">
@@ -598,6 +626,9 @@ function CourtsTab({ state, dispatch }) {
           <Coffee size={14} />
           <span><strong>Sitting out ({waitingIds.length}):</strong> {waitingIds.map((id) => state.units[id].name).join(", ")}</span>
         </div>
+      )}
+      {multiCourt && (
+        <ShuffleBanner state={state} dispatch={dispatch} allCourtsPlaying={allCourtsPlaying} />
       )}
       {state.courtsState.map((court) => (
         <div key={court.id} className="pbr-court-card">
@@ -613,7 +644,12 @@ function CourtsTab({ state, dispatch }) {
             )}
           </div>
           {!court.match ? (
-            <div className="pbr-court-empty"><Coffee size={18} /> Waiting for players{waitingIds.length > 0 ? ` (${waitingIds.length} in queue)` : ""}</div>
+            <div className="pbr-court-empty">
+              <Coffee size={18} />
+              {state.shuffleArmed
+                ? "Waiting for other courts to finish, then reshuffling everyone…"
+                : `Waiting for players${waitingIds.length > 0 ? ` (${waitingIds.length} in queue)` : ""}`}
+            </div>
           ) : (
             <CourtMatch
               court={court}
@@ -1083,6 +1119,10 @@ function Styles() {
       .pbr-court-empty { display: flex; align-items: center; gap: 8px; color: var(--chalk-dim); font-size: 13.5px; padding: 18px 4px; }
       .pbr-sitting-banner { display: flex; align-items: center; gap: 8px; background: var(--navy-2); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--chalk-dim); }
       .pbr-sitting-banner strong { color: var(--chalk); }
+      .pbr-shuffle-banner { display: flex; align-items: center; gap: 8px; background: var(--navy-2); border-radius: 12px; padding: 10px 14px; font-size: 12.5px; color: var(--chalk-dim); }
+      .pbr-shuffle-banner span { flex: 1; }
+      .pbr-shuffle-banner .pbr-btn-small { margin-top: 0; flex-shrink: 0; white-space: nowrap; }
+      .pbr-shuffle-banner.armed { background: rgba(245,194,66,0.12); color: var(--yellow); border: 1px solid rgba(245,194,66,0.3); }
 
       .pbr-match { position: relative; }
       .pbr-court-svg-wrap { position: absolute; inset: 0; opacity: 0.5; pointer-events: none; color: var(--chalk-dim); }
