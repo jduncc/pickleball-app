@@ -12,7 +12,13 @@ import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, RotateCcw, U
 function computeWaitingIds(units) {
   return Object.values(units)
     .filter((u) => u.active && !u.onCourt)
-    .sort((a, b) => a.gamesPlayed - b.gamesPlayed || (a.lastPlayedAt || 0) - (b.lastPlayedAt || 0) || (a.lastPlayedSeq || 0) - (b.lastPlayedSeq || 0) || a.order - b.order)
+    .sort((a, b) =>
+      (b.missStreak || 0) - (a.missStreak || 0) ||
+      a.gamesPlayed - b.gamesPlayed ||
+      (a.lastPlayedAt || 0) - (b.lastPlayedAt || 0) ||
+      (a.lastPlayedSeq || 0) - (b.lastPlayedSeq || 0) ||
+      a.order - b.order
+    )
     .map((u) => u.id);
 }
 function unitName(units, id) { return units[id] ? units[id].name : "?"; }

@@ -53,6 +53,7 @@ function loadState() {
             ...u,
             lastPlayedAt: typeof u.lastPlayedAt === "number" ? u.lastPlayedAt : 0,
             lastPlayedSeq: typeof u.lastPlayedSeq === "number" ? u.lastPlayedSeq : 0,
+            missStreak: typeof u.missStreak === "number" ? u.missStreak : 0,
           };
         }
         merged.units = units;
