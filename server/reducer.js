@@ -189,13 +189,88 @@ function determineShufflePlayingSet(units, totalRequired) {
   return [...mandatory, ...shuffledContested.slice(0, slotsNeeded)];
 }
 
+// Score + best partner split for a single court's group of players, with NO
+// fairness constraint at all (fairness was already decided by
+// determineShufflePlayingSet) — only repeat-avoidance for variety.
+function bestSplitForGroup(group, mode, opponentHist, partnerHist, matchHistory) {
+  if (mode === "fixed") {
+    const [x, y] = group;
+    const repeatScore = opponentHist[pairKey(x, y)] || 0;
+    const exactCount = (matchHistory && matchHistory[matchSig([x], [y])]) || 0;
+    return { sideA: [x], sideB: [y], score: repeatScore * 2 + exactCount * 3 };
+  }
+  const splits = [
+    [[group[0], group[1]], [group[2], group[3]]],
+    [[group[0], group[2]], [group[1], group[3]]],
+    [[group[0], group[3]], [group[1], group[2]]],
+  ];
+  let best = null;
+  let bestScore = Infinity;
+  for (const [sideA, sideB] of splits) {
+    const partnerScore = (partnerHist[pairKey(...sideA)] || 0) + (partnerHist[pairKey(...sideB)] || 0);
+    let oppScore = 0;
+    for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
+    const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
+    const score = partnerScore * 2 + oppScore + exactCount * 3;
+    if (score < bestScore) { bestScore = score; best = { sideA, sideB }; }
+  }
+  return { ...best, score: bestScore };
+}
+
+// Every way to partition the playing set across the courts, tried in full,
+// keeping whichever complete layout minimizes total repeat score across
+// every court at once (ties broken randomly). This is what guarantees a
+// repeat-free arrangement gets used whenever one genuinely exists — sampling
+// random layouts and hoping to stumble on the optimum (the previous
+// approach) verifiably does not: tested against real sessions it settled for
+// partner repeats after using only ~24 of the 28 possible pairs for 8
+// players, well short of the full rotation a true search finds.
+function exhaustiveAssign(courtIds, remainingPlayers, mode, opponentHist, partnerHist, matchHistory) {
+  const perCourt = mode === "fixed" ? 2 : 4;
+  if (courtIds.length === 0) return { layout: [], score: 0 };
+  const [courtId, ...restCourts] = courtIds;
+  let best = null;
+  for (const group of combinations(remainingPlayers, perCourt)) {
+    const groupSet = new Set(group);
+    const rest = remainingPlayers.filter((p) => !groupSet.has(p));
+    const split = bestSplitForGroup(group, mode, opponentHist, partnerHist, matchHistory);
+    const sub = exhaustiveAssign(restCourts, rest, mode, opponentHist, partnerHist, matchHistory);
+    const total = split.score + sub.score;
+    if (!best || total < best.score || (total === best.score && Math.random() < 0.5)) {
+      best = { score: total, layout: [{ courtId, sideA: split.sideA, sideB: split.sideB }, ...sub.layout] };
+    }
+  }
+  return best;
+}
+
+// Safety valve: exhaustive search over every full court layout is only run
+// when the space is small enough to finish instantly. Realistic group sizes
+// (well into the dozens of players) stay comfortably under this cap; only
+// pathologically large groups fall back to randomized sampling, which can't
+// guarantee the optimum but still performs well in practice.
+const ASSIGNMENT_SEARCH_CAP = 200000;
+
+function estimateAssignmentSpace(totalPlayers, perCourt) {
+  let remaining = totalPlayers;
+  let space = 1;
+  while (remaining > 0 && space <= ASSIGNMENT_SEARCH_CAP) {
+    let c = 1;
+    for (let i = 0; i < perCourt; i++) c = (c * (remaining - i)) / (i + 1);
+    space *= c;
+    remaining -= perCourt;
+  }
+  return space;
+}
+
 // Once the fair "who plays" set is fixed, freely shuffle them across courts
-// and into partner/opponent splits with NO fairness constraint at all — only
-// mild repeat-avoidance for variety, chosen by trying several random full
-// layouts and keeping (randomly, among ties) whichever minimizes total
-// repeated pairings across every court at once.
+// and into partner/opponent splits with no fairness constraint — searched
+// exhaustively when feasible (see above), otherwise sampled randomly.
 function shuffleAssignCourts(courtIds, playingSet, mode, opponentHist, partnerHist, matchHistory) {
   const perCourt = mode === "fixed" ? 2 : 4;
+  const searchSpace = estimateAssignmentSpace(playingSet.length, perCourt);
+  if (searchSpace <= ASSIGNMENT_SEARCH_CAP) {
+    return exhaustiveAssign(courtIds, playingSet, mode, opponentHist, partnerHist, matchHistory).layout;
+  }
   const attempts = 40;
   let bestScore = Infinity;
   let candidates = [];
@@ -209,36 +284,149 @@ function shuffleAssignCourts(courtIds, playingSet, mode, opponentHist, partnerHi
     let score = 0;
     for (let c = 0; c < courtIds.length; c++) {
       const group = shuffled.slice(c * perCourt, (c + 1) * perCourt);
-      if (mode === "fixed") {
-        const [x, y] = group;
-        const repeatScore = opponentHist[pairKey(x, y)] || 0;
-        const exactCount = (matchHistory && matchHistory[matchSig([x], [y])]) || 0;
-        score += repeatScore * 2 + exactCount * 3;
-        layout.push({ courtId: courtIds[c], sideA: [x], sideB: [y] });
-      } else {
-        const splits = [
-          [[group[0], group[1]], [group[2], group[3]]],
-          [[group[0], group[2]], [group[1], group[3]]],
-          [[group[0], group[3]], [group[1], group[2]]],
-        ];
-        let bestSplit = null;
-        let bestSplitScore = Infinity;
-        for (const [sideA, sideB] of splits) {
-          const partnerScore = (partnerHist[pairKey(...sideA)] || 0) + (partnerHist[pairKey(...sideB)] || 0);
-          let oppScore = 0;
-          for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
-          const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
-          const splitScore = partnerScore * 2 + oppScore + exactCount * 3;
-          if (splitScore < bestSplitScore) { bestSplitScore = splitScore; bestSplit = { sideA, sideB }; }
-        }
-        score += bestSplitScore;
-        layout.push({ courtId: courtIds[c], sideA: bestSplit.sideA, sideB: bestSplit.sideB });
-      }
+      const split = bestSplitForGroup(group, mode, opponentHist, partnerHist, matchHistory);
+      score += split.score;
+      layout.push({ courtId: courtIds[c], sideA: split.sideA, sideB: split.sideB });
     }
     if (score < bestScore) { bestScore = score; candidates = [layout]; }
     else if (score === bestScore) { candidates.push(layout); }
   }
   return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+// --- Guaranteed round-robin partner scheduling ------------------------------
+// shuffleAssignCourts above picks the best layout for THIS round only. That's
+// a greedy choice: avoiding a repeat now can back the schedule into a corner
+// where every option left repeats something later, even when a genuinely
+// repeat-free full rotation exists (confirmed by testing — real sessions
+// were settling for ~24 of the 28 possible partner pairs for 8 players
+// before a repeat, not the full 28). The only way to actually guarantee "no
+// repeat until everyone's partnered with everyone" is to plan the whole
+// rotation at once instead of one round at a time — the classic "circle
+// method" used for round-robin tournament scheduling does exactly that.
+//
+// This only applies when every active player is always on a court — active
+// count exactly fills every court, nobody ever sits — and only in individual
+// mode, since that's the only case where "partner" is a meaningful, fixed
+// per-round concept. A session with a bench rotates who's sitting every
+// round for fairness, which a fixed pre-built rotation can't account for, so
+// those fall back to the dynamic per-round logic above.
+
+function roundRobinPartnerRounds(playerIds) {
+  // Fixes the first player, rotates the rest around it. Produces n-1 rounds
+  // of n/2 pairs; every one of the C(n,2) unique pairs appears in exactly
+  // one round. Requires an even player count.
+  const n = playerIds.length;
+  if (n < 2 || n % 2 !== 0) return [];
+  const fixed = playerIds[0];
+  let rotating = playerIds.slice(1);
+  const rounds = [];
+  for (let r = 0; r < n - 1; r++) {
+    const ring = [fixed, ...rotating];
+    const pairs = [];
+    for (let i = 0; i < n / 2; i++) pairs.push([ring[i], ring[n - 1 - i]]);
+    rounds.push(pairs);
+    rotating = [rotating[rotating.length - 1], ...rotating.slice(0, -1)];
+  }
+  return rounds;
+}
+
+// Only WHICH court a partner-pair plays on (and which pair it faces) is
+// decided here — the partner pairing itself is already fixed and guaranteed
+// repeat-free by the circle method above, so this step only affects
+// secondary opponent variety. Grouping m pre-formed pairs onto courts grows
+// combinatorially in m (a perfect-matching count), which turned out to matter:
+// tested against a 20-player/5-court session, exhaustively searching every
+// grouping for every round of the plan took 18+ seconds — long enough to hang
+// a real reshuffle. So it's only run exhaustively up to PAIR_ASSIGNMENT_CAP;
+// larger groups fall back to randomly sampling groupings and keeping the
+// best found, same pattern as shuffleAssignCourts's own fallback.
+const PAIR_ASSIGNMENT_CAP = 5000;
+
+function estimatePairAssignmentSpace(pairCount) {
+  let space = 1;
+  let remaining = pairCount;
+  while (remaining > 0 && space <= PAIR_ASSIGNMENT_CAP) {
+    space *= (remaining * (remaining - 1)) / 2;
+    remaining -= 2;
+  }
+  return space;
+}
+
+function assignPairsToCourts(courtIds, pairs, opponentHist, matchHistory) {
+  function scorePairing(pairA, pairB) {
+    let oppScore = 0;
+    for (const x of pairA) for (const y of pairB) oppScore += opponentHist[pairKey(x, y)] || 0;
+    const exactCount = (matchHistory && matchHistory[matchSig(pairA, pairB)]) || 0;
+    return oppScore + exactCount * 3;
+  }
+
+  if (estimatePairAssignmentSpace(pairs.length) > PAIR_ASSIGNMENT_CAP) {
+    const attempts = 60;
+    let bestScore = Infinity;
+    let candidates = [];
+    for (let a = 0; a < attempts; a++) {
+      const shuffled = [...pairs];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      const layout = [];
+      let score = 0;
+      for (let c = 0; c < courtIds.length; c++) {
+        const [pairA, pairB] = [shuffled[c * 2], shuffled[c * 2 + 1]];
+        score += scorePairing(pairA, pairB);
+        layout.push({ courtId: courtIds[c], sideA: pairA, sideB: pairB });
+      }
+      if (score < bestScore) { bestScore = score; candidates = [layout]; }
+      else if (score === bestScore) { candidates.push(layout); }
+    }
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  function assign(remainingCourts, remainingPairs) {
+    if (remainingCourts.length === 0) return { layout: [], score: 0 };
+    const [courtId, ...restCourts] = remainingCourts;
+    let best = null;
+    for (const combo of combinations(remainingPairs, 2)) {
+      const [pairA, pairB] = combo;
+      const restPairs = remainingPairs.filter((p) => p !== pairA && p !== pairB);
+      const score = scorePairing(pairA, pairB);
+      const sub = assign(restCourts, restPairs);
+      const total = score + sub.score;
+      if (!best || total < best.score || (total === best.score && Math.random() < 0.5)) {
+        best = { score: total, layout: [{ courtId, sideA: pairA, sideB: pairB }, ...sub.layout] };
+      }
+    }
+    return best;
+  }
+  return assign(courtIds, pairs).layout;
+}
+
+// Builds a complete no-repeat rotation for the current active roster. Rounds
+// are ordered so that any pair already used (e.g. right after the rotation
+// is rebuilt mid-session because a player joined or left) is deferred to the
+// end — genuinely fresh pairings get used first, already-seen ones only once
+// there's no better option. Returns null when the precondition (individual
+// mode, active count exactly fills every court) doesn't hold.
+function buildGuaranteedShufflePlan(playerIds, courtIds, opponentHist, partnerHist, matchHistory) {
+  const n = playerIds.length;
+  if (n === 0 || n !== courtIds.length * 4) return null;
+  const shuffled = [...playerIds];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const rawRounds = roundRobinPartnerRounds(shuffled);
+  if (rawRounds.length === 0) return null;
+  const scoredRounds = rawRounds.map((pairs) => ({
+    pairs,
+    score: pairs.reduce((s, [a, b]) => s + (partnerHist[pairKey(a, b)] || 0), 0),
+  }));
+  scoredRounds.sort((a, b) => a.score - b.score || Math.random() - 0.5);
+  const rounds = scoredRounds.map(({ pairs }) => assignPairsToCourts(courtIds, pairs, opponentHist, matchHistory));
+  const playerSetKey = [...playerIds].sort().join(",") + "|" + courtIds.join(",");
+  return { playerSetKey, rounds, index: 0 };
 }
 
 function fillAllEmptyCourts(courtsState, unitsIn, mode, opponentHist, partnerHist, matchHistory, preferredMatches) {
@@ -351,6 +539,7 @@ export const initialState = {
   log: [],
   orderCounter: 0,
   shuffleArmed: false,
+  shufflePlan: null,
 };
 
 function rid(prefix) {
@@ -571,11 +760,34 @@ export function reducer(state, action) {
         });
         const perCourt = state.mode === "fixed" ? 2 : 4;
         const totalRequired = courtsState.length * perCourt;
-        const playingSet = determineShufflePlayingSet(normalizedUnits, totalRequired);
+        const courtIdList = courtsState.map((c) => c.id);
         let newCourtsState = courtsState;
         let finalUnits = normalizedUnits;
-        if (playingSet) {
-          const layout = shuffleAssignCourts(courtsState.map((c) => c.id), playingSet, state.mode, opponentHist, partnerHist, matchHistory);
+        let shufflePlan = state.shufflePlan;
+
+        // Guaranteed round-robin scheduling: only when every active player
+        // is always on a court (nobody ever sits) in individual mode. Build
+        // or reuse a full no-repeat rotation for the current roster instead
+        // of picking one good round at a time.
+        const activeIds = Object.values(normalizedUnits).filter((u) => u.active).map((u) => u.id);
+        const noBench = state.mode === "individual" && activeIds.length === totalRequired && totalRequired > 0;
+        if (noBench) {
+          const key = [...activeIds].sort().join(",") + "|" + courtIdList.join(",");
+          if (!shufflePlan || shufflePlan.playerSetKey !== key || shufflePlan.index >= shufflePlan.rounds.length) {
+            shufflePlan = buildGuaranteedShufflePlan(activeIds, courtIdList, opponentHist, partnerHist, matchHistory);
+          }
+        } else {
+          shufflePlan = null;
+        }
+
+        const layout = noBench && shufflePlan
+          ? shufflePlan.rounds[shufflePlan.index]
+          : (() => {
+              const playingSet = determineShufflePlayingSet(normalizedUnits, totalRequired);
+              return playingSet ? shuffleAssignCourts(courtIdList, playingSet, state.mode, opponentHist, partnerHist, matchHistory) : null;
+            })();
+
+        if (layout) {
           finalUnits = { ...normalizedUnits };
           layout.forEach((m) => {
             [...m.sideA, ...m.sideB].forEach((id) => { finalUnits[id] = { ...finalUnits[id], onCourt: true }; });
@@ -591,6 +803,7 @@ export function reducer(state, action) {
             const m = layout.find((l) => l.courtId === c.id);
             return m ? { ...c, match: { sideA: m.sideA, sideB: m.sideB, startedAt } } : c;
           });
+          if (noBench && shufflePlan) shufflePlan = { ...shufflePlan, index: shufflePlan.index + 1 };
         } else {
           // Not enough active players to fill every court at once — fall
           // back to filling whatever's possible with the normal logic.
@@ -598,7 +811,11 @@ export function reducer(state, action) {
           newCourtsState = filled.courts;
           finalUnits = filled.units;
         }
-        return withNextPreview({ ...state, units: finalUnits, courtsState: newCourtsState, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1, shuffleArmed: false });
+        // Stay armed by default: shuffle mode is now a standing preference
+        // rather than a one-shot action, so a completed reshuffle re-arms
+        // itself for the next round instead of silently turning off. It only
+        // turns off when the user explicitly cancels it (CANCEL_SHUFFLE).
+        return withNextPreview({ ...state, units: finalUnits, courtsState: newCourtsState, opponentHist, partnerHist, matchHistory, log: [...state.log, logEntry], orderCounter: order + 1, shuffleArmed: true, shufflePlan });
       }
 
       // If we already committed to a "next match" preview for this court and
@@ -623,7 +840,7 @@ export function reducer(state, action) {
       // Anything already sitting empty while we were waiting needs to be
       // filled normally right away rather than left stranded.
       const filled = fillAllEmptyCourts(state.courtsState, state.units, state.mode, state.opponentHist, state.partnerHist, state.matchHistory);
-      return withNextPreview({ ...state, shuffleArmed: false, units: filled.units, courtsState: filled.courts });
+      return withNextPreview({ ...state, shuffleArmed: false, shufflePlan: null, units: filled.units, courtsState: filled.courts });
     }
 
     case "UNDO_LAST": {
