@@ -250,6 +250,12 @@ app.delete("/api/sessions/:id", requireLogin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Google Search Console domain-ownership verification file (HTML-file
+// method) — must be served verbatim at this exact path for Google to
+// confirm pb.jonathanandamanda.com belongs to this account. Harmless to
+// leave in place permanently; removing it would just un-verify the domain.
+app.get("/googlee908e4de6a099324.html", (req, res) => res.sendFile(path.join(__dirname, "googlee908e4de6a099324.html")));
+
 // Real, server-rendered homepage at "/" — registered before the static
 // middleware (which would otherwise serve the SPA's public/index.html for
 // an exact "/" match) and before the SPA catch-all below. Google's OAuth
