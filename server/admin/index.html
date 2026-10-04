@@ -68,6 +68,7 @@
   .session-del-btn { background: rgba(232,101,79,0.15); color: var(--coral); border: none; border-radius: 8px; padding: 5px 9px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .gate { text-align: center; padding: 60px 20px; }
   .gate .btn { max-width: 260px; margin: 16px auto 0; }
+  .admin-footer { text-align: center; color: var(--chalk-dim); font-size: 11.5px; margin-top: 18px; }
 </style>
 </head>
 <body>
@@ -114,6 +115,8 @@
         <button class="btn btn-ghost" id="downloadBtn">Download .db file</button>
         <div class="msg" id="downloadMsg"></div>
       </div>
+
+      <div class="admin-footer" id="versionFooter"></div>
     </div>
   </div>
 
@@ -130,6 +133,7 @@
   const newEmailInput = document.getElementById('newEmail');
   const downloadBtn = document.getElementById('downloadBtn');
   const downloadMsg = document.getElementById('downloadMsg');
+  const versionFooter = document.getElementById('versionFooter');
 
   function showMsg(el, text, ok) {
     el.textContent = text;
@@ -158,6 +162,18 @@
     mainEl.style.display = 'block';
     refreshStatus();
     refreshUsers();
+    loadVersion();
+  }
+
+  async function loadVersion() {
+    try {
+      const res = await fetch('/api/version');
+      if (!res.ok) throw new Error('status ' + res.status);
+      const data = await res.json();
+      versionFooter.textContent = 'Pickleball Round Robin v' + data.version + (data.buildDate ? ' (' + data.buildDate + ')' : '');
+    } catch (e) {
+      versionFooter.textContent = '';
+    }
   }
 
   async function refreshStatus() {
