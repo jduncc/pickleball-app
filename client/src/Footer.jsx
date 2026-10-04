@@ -7,11 +7,22 @@ import { getVersion } from "./api.js";
 // instead, see PickleballApp.jsx.
 export default function Footer() {
   const [version, setVersion] = useState(null);
+  const [buildDate, setBuildDate] = useState(null);
 
   useEffect(() => {
-    getVersion().then((v) => setVersion(v.version)).catch(() => setVersion(null));
+    getVersion()
+      .then((v) => {
+        setVersion(v.version);
+        setBuildDate(v.buildDate || null);
+      })
+      .catch(() => setVersion(null));
   }, []);
 
   if (!version) return null;
-  return <div className="pbr-footer">Pickleball Round Robin v{version}</div>;
+  return (
+    <div className="pbr-footer">
+      Pickleball Round Robin v{version}
+      {buildDate ? ` (${buildDate})` : ""}
+    </div>
+  );
 }

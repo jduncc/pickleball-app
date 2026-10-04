@@ -130,7 +130,12 @@ const PACKAGE_VERSION = (() => {
   catch { return "dev"; }
 })();
 app.get("/api/version", (req, res) => {
-  res.json({ version: process.env.APP_VERSION || PACKAGE_VERSION });
+  res.json({
+    version: process.env.APP_VERSION || PACKAGE_VERSION,
+    // Set by the Docker build (see Dockerfile/CI) to the date the running
+    // image was built. Null for a local, non-Docker run.
+    buildDate: process.env.BUILD_DATE || null,
+  });
 });
 
 // Test-only: logs in as an existing user by email, bypassing Google
