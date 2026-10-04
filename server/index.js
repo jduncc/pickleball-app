@@ -124,7 +124,10 @@ app.get("/auth/google/callback", (req, res, next) => {
     }
     req.logIn(user, (loginErr) => {
       if (loginErr) return next(loginErr);
-      return res.redirect(user.is_admin ? "/admin" : "/app");
+      // Admins land on the same player dashboard as everyone else after
+      // signing in — /admin is a deliberate extra step they navigate to
+      // themselves, not where sign-in dumps them.
+      return res.redirect("/app");
     });
   })(req, res, next);
 });

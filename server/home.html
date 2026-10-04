@@ -59,14 +59,11 @@
   </div>
   <script>
     // Progressive enhancement only: the page above is fully meaningful and
-    // usable with this script never running. For a visitor who happens to
-    // already be signed in, swap the button to go straight to the app
-    // instead of back through Google sign-in.
+    // usable with this script never running — it only matters for a
+    // visitor who happens to already be signed in, who gets sent straight
+    // to their sessions instead of seeing the marketing/sign-in page.
     fetch("/api/me").then((r) => r.json()).then((me) => {
-      if (!me || !me.authenticated) return;
-      const cta = document.getElementById("cta");
-      cta.textContent = "Go to my sessions";
-      cta.href = "/app";
+      if (me && me.authenticated) window.location.replace("/app");
     }).catch(() => {});
   </script>
 </body>

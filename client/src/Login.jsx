@@ -20,9 +20,9 @@ export default function Login() {
       .then((me) => {
         if (cancelled) return;
         if (me.authenticated) {
-          // /admin is a separate static page outside this SPA's router.
-          if (me.isAdmin) window.location.href = "/admin";
-          else navigate("/app", { replace: true });
+          // Admins land on the player dashboard too — /admin is somewhere
+          // they navigate to deliberately, not where sign-in sends them.
+          navigate("/app", { replace: true });
           return;
         }
         setChecking(false);
