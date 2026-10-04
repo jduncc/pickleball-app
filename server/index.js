@@ -263,6 +263,12 @@ io.engine.use(sessionMw);
 io.engine.use(passport.initialize());
 io.engine.use(passport.session());
 
+/* ------------------------------ Legal -------------------------------- */
+// Static, generic privacy policy / terms pages — mainly so the Google OAuth
+// consent screen has somewhere real to link to. No tracking of their own.
+app.get("/privacy", (req, res) => res.sendFile(path.join(__dirname, "legal", "privacy.html")));
+app.get("/terms", (req, res) => res.sendFile(path.join(__dirname, "legal", "terms.html")));
+
 /* ------------------------------ Admin ------------------------------- */
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 
