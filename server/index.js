@@ -382,7 +382,7 @@ io.on("connection", (socket) => {
 
     const state = loadLiveSession(row.id);
     socket.emit("state", state);
-    socket.emit("session_meta", { endedAt: row.ended_at, role });
+    socket.emit("session_meta", { endedAt: row.ended_at, role, title: row.title });
   });
 
   socket.on("action", (action) => {

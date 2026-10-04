@@ -7,7 +7,7 @@ import { SetupScreen, SessionScreen, ConnBadge, Styles } from "./PickleballApp.j
 export default function OwnerSession() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state, connected, ended, joinError, dispatch } = useSession({ sessionId: id });
+  const { state, connected, ended, title, joinError, dispatch } = useSession({ sessionId: id });
   const [shareUrl, setShareUrl] = useState(null);
 
   useEffect(() => {
@@ -66,6 +66,7 @@ export default function OwnerSession() {
               dispatch={dispatch}
               role="owner"
               ended={ended}
+              title={title}
               onBack={() => navigate("/app")}
               onEndSession={handleEndSession}
             />

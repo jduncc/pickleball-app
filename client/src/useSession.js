@@ -11,6 +11,7 @@ export function useSession({ sessionId, slug }) {
   const [connected, setConnected] = useState(false);
   const [role, setRole] = useState(null);
   const [ended, setEnded] = useState(false);
+  const [title, setTitle] = useState(null);
   const [joinError, setJoinError] = useState(null);
   const [actionError, setActionError] = useState(null);
   const socketRef = useRef(null);
@@ -29,7 +30,7 @@ export function useSession({ sessionId, slug }) {
     });
     socket.on("disconnect", () => setConnected(false));
     socket.on("state", (s) => setState(s));
-    socket.on("session_meta", (m) => { setRole(m.role); setEnded(Boolean(m.endedAt)); });
+    socket.on("session_meta", (m) => { setRole(m.role); setEnded(Boolean(m.endedAt)); setTitle(m.title || null); });
     socket.on("join_error", (e) => setJoinError(e.error));
     socket.on("ended", () => setEnded(true));
     socket.on("action_rejected", (e) => {
@@ -44,5 +45,5 @@ export function useSession({ sessionId, slug }) {
     if (socketRef.current) socketRef.current.emit("action", action);
   };
 
-  return { state, connected, role, ended, joinError, actionError, dispatch };
+  return { state, connected, role, ended, title, joinError, actionError, dispatch };
 }

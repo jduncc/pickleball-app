@@ -66,10 +66,10 @@ function csvEscape(val) {
 }
 function csvLine(cells) { return cells.map(csvEscape).join(","); }
 
-function buildSessionCSV(state, label) {
+function buildSessionCSV(state, title) {
   const who = state.mode === "fixed" ? "Team" : "Player";
   const lines = [];
-  lines.push(`Session results${label ? " - " + label : ""}`);
+  lines.push(title ? `${title} - Session results` : "Session results");
   lines.push(`Format,${state.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}`);
   const avgMs = averageDurationMs(state.log);
   if (avgMs !== null) lines.push(`Average game length,${formatDuration(avgMs)}`);
@@ -104,9 +104,18 @@ function downloadText(filename, text) {
   URL.revokeObjectURL(url);
 }
 
-function exportSession(state, label) {
+// Turns a session name into a filesystem-safe filename fragment, e.g.
+// "RR 10/4/2026" -> "rr-10-4-2026". Falls back to nothing when there's no
+// title (a legacy session), leaving just the date in the filename.
+function slugifyTitle(title) {
+  if (!title) return "";
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug ? `${slug}-` : "";
+}
+
+function exportSession(state, title) {
   const dateStr = new Date().toISOString().slice(0, 10);
-  downloadText(`pickleball-results-${dateStr}.csv`, buildSessionCSV(state, label));
+  downloadText(`pickleball-results-${slugifyTitle(title)}${dateStr}.csv`, buildSessionCSV(state, title));
 }
 
 /* ---------------------------------------------------------------------- */
@@ -118,7 +127,7 @@ const PDF_GREEN = [47, 163, 122];
 const PDF_YELLOW = [245, 194, 66];
 const PDF_DIM = [120, 130, 145];
 
-function buildSessionPDF(state, label) {
+function buildSessionPDF(state, title) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 40;
@@ -126,17 +135,22 @@ function buildSessionPDF(state, label) {
   const winner = rows[0];
   const who = state.mode === "fixed" ? "Team" : "Player";
 
-  let y = 50;
+  let y = 40;
   doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...PDF_DIM);
+  doc.text("PICKLEBALL ROUND ROBIN", marginX, y);
+
+  y += 22;
   doc.setFontSize(20);
   doc.setTextColor(...PDF_NAVY);
-  doc.text("Pickleball Round Robin Results", marginX, y);
+  doc.text(title || "Results", marginX, y);
 
   y += 20;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...PDF_DIM);
-  const dateLabel = label || new Date().toLocaleDateString();
+  const dateLabel = new Date().toLocaleDateString();
   const gameWord = state.log.length === 1 ? "game" : "games";
   const avgMs = averageDurationMs(state.log);
   const avgSuffix = avgMs !== null ? `  \u00b7  avg ${formatDuration(avgMs)}/game` : "";
@@ -227,10 +241,10 @@ function buildSessionPDF(state, label) {
   return doc;
 }
 
-function exportSessionPDF(state, label) {
-  const doc = buildSessionPDF(state, label);
+function exportSessionPDF(state, title) {
+  const doc = buildSessionPDF(state, title);
   const dateStr = new Date().toISOString().slice(0, 10);
-  doc.save(`pickleball-results-${dateStr}.pdf`);
+  doc.save(`pickleball-results-${slugifyTitle(title)}${dateStr}.pdf`);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -448,7 +462,7 @@ function CourtNameInput({ index, value, dispatch }) {
 // lineup edits, roster, ending the session) is hidden here and enforced
 // again server-side regardless of what this client renders.
 // ended: true once the host has ended the session — read-only everywhere.
-export function SessionScreen({ state, dispatch, role = "owner", ended = false, onBack, onEndSession }) {
+export function SessionScreen({ state, dispatch, role = "owner", ended = false, title = null, onBack, onEndSession }) {
   const isOwner = role === "owner";
   const [tab, setTab] = useState("courts");
 
@@ -478,7 +492,7 @@ export function SessionScreen({ state, dispatch, role = "owner", ended = false, 
         {tab === "courts" && <CourtsTab state={state} dispatch={dispatch} role={role} ended={ended} />}
         {tab === "queue" && isOwner && <QueueTab state={state} dispatch={dispatch} ended={ended} />}
         {tab === "standings" && <StandingsTab state={state} />}
-        {tab === "log" && <LogTab state={state} dispatch={dispatch} role={role} ended={ended} onBack={onBack} onEndSession={onEndSession} />}
+        {tab === "log" && <LogTab state={state} dispatch={dispatch} role={role} ended={ended} title={title} onBack={onBack} onEndSession={onEndSession} />}
       </main>
 
       <nav className="pbr-tabbar">
@@ -853,7 +867,7 @@ export function StandingsTab({ state }) {
   );
 }
 
-function LogTab({ state, dispatch, role = "owner", ended = false, onBack, onEndSession }) {
+function LogTab({ state, dispatch, role = "owner", ended = false, title = null, onBack, onEndSession }) {
   const isOwner = role === "owner";
   const entries = [...state.log].reverse();
 
@@ -863,8 +877,8 @@ function LogTab({ state, dispatch, role = "owner", ended = false, onBack, onEndS
         <div className="pbr-log-header-row">
           <h2>Game log</h2>
           <div className="pbr-log-header-actions">
-            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => exportSession(state)}><Download size={14} /> Export CSV</button>
-            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => exportSessionPDF(state)}><FileText size={14} /> Export PDF</button>
+            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => exportSession(state, title)}><Download size={14} /> Export CSV</button>
+            <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => exportSessionPDF(state, title)}><FileText size={14} /> Export PDF</button>
             {isOwner && !ended && (
               <button className="pbr-btn pbr-btn-ghost pbr-btn-small" disabled={state.log.length === 0} onClick={() => dispatch({ type: "UNDO_LAST" })}><Undo2 size={14} /> Undo last</button>
             )}

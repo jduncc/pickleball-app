@@ -278,11 +278,11 @@
   }
 
   function sessionRowTitle(s) {
-    if (s.title) return s.title;
-    if (s.endedAt && s.winner) {
-      const w = s.winner;
-      return `${w.name} won (${w.wins}-${w.losses}, ${w.diff >= 0 ? '+' : ''}${w.diff})`;
-    }
+    const name = s.title || null;
+    const winner = s.endedAt && s.winner ? s.winner.name : null;
+    if (name && winner) return `${name} - ${winner}`;
+    if (name) return name;
+    if (winner) return winner;
     return s.mode === 'fixed' ? 'Fixed teams' : 'Individual';
   }
 

@@ -125,15 +125,15 @@ export default function Dashboard() {
   );
 }
 
-// Prefers a name the owner actually gave the session. Failing that, an
-// ended session shows who won instead of a generic placeholder; an active
-// one (no final standings yet) falls back to its mode.
+// "<session name> - <winner>" once there's a final winner to show; just the
+// name (or a placeholder) otherwise. Falls back to the mode for an
+// untitled legacy session with no name of its own.
 function sessionRowTitle(session) {
-  if (session.title) return session.title;
-  if (session.endedAt && session.winner) {
-    const { name, wins, losses, diff } = session.winner;
-    return `${name} won (${wins}-${losses}, ${diff >= 0 ? "+" : ""}${diff})`;
-  }
+  const name = session.title || null;
+  const winner = session.endedAt && session.winner ? session.winner.name : null;
+  if (name && winner) return `${name} - ${winner}`;
+  if (name) return name;
+  if (winner) return winner;
   return session.mode === "fixed" ? "Fixed partners" : "Individual";
 }
 

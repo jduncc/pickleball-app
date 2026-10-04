@@ -5,7 +5,7 @@ import { SessionScreen, ConnBadge, CourtMark, Styles } from "./PickleballApp.jsx
 
 export default function GuestSession() {
   const { slug } = useParams();
-  const { state, connected, ended, joinError, dispatch } = useSession({ slug });
+  const { state, connected, ended, title, joinError, dispatch } = useSession({ slug });
 
   if (joinError) {
     return (
@@ -29,7 +29,7 @@ export default function GuestSession() {
           <p className="pbr-sub">The host hasn't started this session yet — check back in a moment.</p>
         </div>
       ) : (
-        <SessionScreen state={state} dispatch={dispatch} role="guest" ended={ended} />
+        <SessionScreen state={state} dispatch={dispatch} role="guest" ended={ended} title={title} />
       )}
     </div>
   );
