@@ -277,6 +277,15 @@
     }
   }
 
+  function sessionRowTitle(s) {
+    if (s.title) return s.title;
+    if (s.endedAt && s.winner) {
+      const w = s.winner;
+      return `${w.name} won (${w.wins}-${w.losses}, ${w.diff >= 0 ? '+' : ''}${w.diff})`;
+    }
+    return s.mode === 'fixed' ? 'Fixed teams' : 'Individual';
+  }
+
   function renderSessions(panel, sessions) {
     if (sessions.length === 0) {
       panel.innerHTML = '<p class="empty-note">No sessions.</p>';
@@ -285,7 +294,7 @@
     panel.innerHTML = sessions.map((s) => `
       <div class="session-row" data-session-id="${s.id}">
         <div class="session-info">
-          <span class="session-title">${s.title || (s.mode === 'fixed' ? 'Fixed teams' : 'Individual')}</span>
+          <span class="session-title">${sessionRowTitle(s)}</span>
           <span class="session-meta2">${fmtShort(s.createdAt)} · ${s.endedAt ? 'ended' : 'active'}</span>
         </div>
         <button class="session-del-btn" data-id="${s.id}">Delete</button>

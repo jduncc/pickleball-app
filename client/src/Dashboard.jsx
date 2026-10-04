@@ -32,9 +32,14 @@ export default function Dashboard() {
   }, [me]);
 
   const handleCreate = async () => {
+    const today = new Date();
+    const defaultTitle = `RR ${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`;
+    const typed = prompt("Name this session (optional):", defaultTitle);
+    if (typed === null) return; // cancelled
+    const title = typed.trim() || defaultTitle;
     setCreating(true);
     try {
-      const d = await createSession("individual", null);
+      const d = await createSession("individual", title);
       navigate(`/app/sessions/${d.session.id}`);
     } catch (e) {
       setError("Could not create a new session.");
@@ -120,12 +125,24 @@ export default function Dashboard() {
   );
 }
 
+// Prefers a name the owner actually gave the session. Failing that, an
+// ended session shows who won instead of a generic placeholder; an active
+// one (no final standings yet) falls back to its mode.
+function sessionRowTitle(session) {
+  if (session.title) return session.title;
+  if (session.endedAt && session.winner) {
+    const { name, wins, losses, diff } = session.winner;
+    return `${name} won (${wins}-${losses}, ${diff >= 0 ? "+" : ""}${diff})`;
+  }
+  return session.mode === "fixed" ? "Fixed partners" : "Individual";
+}
+
 function SessionRow({ session, onOpen, onCopyLink }) {
   const dt = new Date(session.createdAt);
   return (
     <div className="pbr-session-row" onClick={onOpen}>
       <div className="pbr-session-row-info">
-        <span className="pbr-session-row-title">{session.title || (session.mode === "fixed" ? "Fixed partners" : "Individual")}</span>
+        <span className="pbr-session-row-title">{sessionRowTitle(session)}</span>
         <span className="pbr-session-row-meta">{dt.toLocaleDateString()} · {session.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}</span>
         {onCopyLink && (
           <button className="pbr-copy-link-btn" onClick={(e) => { e.stopPropagation(); onCopyLink(session.shareUrl); }}>

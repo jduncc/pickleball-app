@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import { reducer, initialState } from "./reducer.js";
 import passport from "passport";
 import {
-  db, DATA_DIR, DB_PATH, seedAdminEmails, migrateLegacyData,
+  db, DATA_DIR, DB_PATH, seedAdminEmails, migrateLegacyData, clearMigrationPlaceholderTitles,
   createSessionRow, getSessionById, getSessionBySlug, listSessionsForOwner,
   saveSessionState, endSessionRow, deleteSessionRow, overallStats,
   listUsers, addAllowedUser, revokeUser, findUserById,
@@ -25,6 +25,10 @@ if (seededAdmins.length === 0) {
 const migration = migrateLegacyData();
 if (migration.ran) {
   console.log(`[startup] Legacy data migrated to ${migration.ownerEmail} (${migration.imported} session(s)).`);
+}
+const titleCleanup = clearMigrationPlaceholderTitles();
+if (titleCleanup.ran && titleCleanup.cleared > 0) {
+  console.log(`[startup] Cleared generic "Migrated session" title on ${titleCleanup.cleared} session(s) so the list can show the winner instead.`);
 }
 
 // Backfills fields added to the reducer's unit/court shape since a session
@@ -49,6 +53,25 @@ function normalizeState(parsed) {
     merged.units = units;
   }
   return merged;
+}
+
+// Same ranking the client's standings tab uses (win % desc, point diff desc,
+// points-for desc), so the top row here is exactly who the standings tab
+// would call the winner. Returns null when there's no completed game to
+// rank (e.g. a session ended before any score was entered).
+function computeWinner(state) {
+  const units = state && state.units ? Object.values(state.units) : [];
+  const played = units.filter((u) => u.gamesPlayed > 0);
+  if (played.length === 0) return null;
+  played.sort((a, b) => {
+    const aWinPct = a.wins / a.gamesPlayed, bWinPct = b.wins / b.gamesPlayed;
+    if (bWinPct !== aWinPct) return bWinPct - aWinPct;
+    const aDiff = a.pointsFor - a.pointsAgainst, bDiff = b.pointsFor - b.pointsAgainst;
+    if (bDiff !== aDiff) return bDiff - aDiff;
+    return b.pointsFor - a.pointsFor;
+  });
+  const top = played[0];
+  return { name: top.name, wins: top.wins, losses: top.losses, diff: top.pointsFor - top.pointsAgainst };
 }
 
 /* --------------------------- Live session cache -------------------------- */
@@ -173,6 +196,13 @@ function serializeSessionRow(row, { includeState = false } = {}) {
     shareUrl: `${PUBLIC_URL}/s/${row.share_slug}`,
     shareSlug: row.share_slug,
   };
+  // Only ended sessions get a final winner — an active one's standings are
+  // still changing, so the session list shows the mode instead (handled
+  // client-side) until there's something final to report.
+  if (row.ended_at) {
+    try { out.winner = computeWinner(normalizeState(JSON.parse(row.state))); }
+    catch { out.winner = null; }
+  }
   if (includeState) {
     try { out.state = normalizeState(JSON.parse(row.state)); } catch { out.state = { ...initialState }; }
   }

@@ -141,8 +141,8 @@ export function migrateLegacyData() {
       if (state && state.phase === "session") {
         db.prepare(
           `INSERT INTO sessions (id, owner_user_id, share_slug, title, mode, created_at, ended_at, state)
-           VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`
-        ).run(randomUUID(), owner.id, newShareSlug(), "Migrated active session", state.mode || null, Date.now(), currentRow.data);
+           VALUES (?, ?, ?, NULL, ?, ?, NULL, ?)`
+        ).run(randomUUID(), owner.id, newShareSlug(), state.mode || null, Date.now(), currentRow.data);
         imported++;
       }
     } catch (err) {
@@ -154,14 +154,33 @@ export function migrateLegacyData() {
   for (const row of historyRows) {
     db.prepare(
       `INSERT INTO sessions (id, owner_user_id, share_slug, title, mode, created_at, ended_at, state)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(randomUUID(), owner.id, newShareSlug(), "Migrated session", row.mode || null, row.ended_at, row.ended_at, row.data);
+       VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`
+    ).run(randomUUID(), owner.id, newShareSlug(), row.mode || null, row.ended_at, row.ended_at, row.data);
     imported++;
   }
 
   setMeta("migrated_v2", "1");
   console.log(`[migrate] Imported ${imported} legacy session(s) into user ${ownerEmail}'s account.`);
   return { ran: true, imported, ownerEmail };
+}
+
+// One-time, idempotent cleanup for databases that already ran the migration
+// above before it stopped stamping a generic "Migrated session" /
+// "Migrated active session" title: clears those placeholders so the
+// session list falls back to showing the winner (or the mode) instead of
+// the same placeholder text for every row. Safe to run even if nothing
+// needs clearing. Separate from migrated_v2 so it still runs once against
+// a database that was migrated under the old behavior.
+export function clearMigrationPlaceholderTitles() {
+  if (getMeta("cleared_migration_titles_v1") === "1") return { ran: false };
+  const result = db
+    .prepare(`UPDATE sessions SET title = NULL WHERE title IN ('Migrated session', 'Migrated active session')`)
+    .run();
+  setMeta("cleared_migration_titles_v1", "1");
+  if (result.changes > 0) {
+    console.log(`[migrate] Cleared placeholder title on ${result.changes} previously-migrated session(s).`);
+  }
+  return { ran: true, cleared: result.changes };
 }
 
 /* ------------------------------ Users ---------------------------------- */

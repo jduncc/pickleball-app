@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText, Pencil, Lock } from "lucide-react";
+import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText, Pencil, Lock, ArrowLeft } from "lucide-react";
 import Footer from "./Footer.jsx";
 
 /* ---------------------------------------------------------------------- */
@@ -455,6 +455,9 @@ export function SessionScreen({ state, dispatch, role = "owner", ended = false, 
   return (
     <div className="pbr-session">
       <header className="pbr-session-header">
+        {isOwner && onBack && (
+          <button className="pbr-icon-btn" title="Back to my sessions" onClick={onBack}><ArrowLeft size={18} /></button>
+        )}
         <CourtMark small />
         <div className="pbr-session-title">
           <span className="pbr-eyebrow">{state.mode === "fixed" ? "Fixed partners" : "Everyone for themselves"}</span>
