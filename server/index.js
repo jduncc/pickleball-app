@@ -250,6 +250,17 @@ app.delete("/api/sessions/:id", requireLogin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Real, server-rendered homepage at "/" — registered before the static
+// middleware (which would otherwise serve the SPA's public/index.html for
+// an exact "/" match) and before the SPA catch-all below. Google's OAuth
+// consent-screen reviewer fetches this URL without running JavaScript, so
+// it needs to carry real, visible content (what the app is, a sign-in
+// link, no login wall) on its own — the React app's client-rendered
+// Login.jsx screen doesn't satisfy that even though it looks similar to a
+// person. Signed-in visitors still land here first; home.html's own small
+// script swaps the button to jump straight into the app for them.
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "home.html")));
+
 app.use(express.static(path.join(__dirname, "public")));
 app.get("/health", (req, res) => res.json({ ok: true }));
 
