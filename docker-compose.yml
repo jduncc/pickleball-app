@@ -5,7 +5,13 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3000}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      - APP_VERSION=${APP_VERSION:-}
+      - NODE_ENV=${NODE_ENV:-production}
     volumes:
       - pickleball-data:/app/data
     restart: unless-stopped

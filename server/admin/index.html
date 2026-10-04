@@ -18,13 +18,13 @@
     font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
     display: flex; justify-content: center;
   }
-  .wrap { width: 100%; max-width: 480px; padding: 24px 18px 60px; }
+  .wrap { width: 100%; max-width: 560px; padding: 24px 18px 60px; }
   h1 { font-size: 20px; margin: 10px 0 2px; }
   .sub { color: var(--chalk-dim); font-size: 13px; margin: 0 0 22px; }
   .card { background: var(--navy-2); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
   .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--chalk-dim); margin: 0 0 12px; }
   label { font-size: 12.5px; color: var(--chalk-dim); display: block; margin-bottom: 6px; }
-  input[type="text"], input[type="password"] {
+  input[type="text"], input[type="email"] {
     width: 100%; background: var(--navy); border: 1px solid var(--navy-3); color: var(--chalk);
     border-radius: 10px; padding: 11px 13px; font-size: 14px; font-family: inherit; margin-bottom: 4px;
   }
@@ -46,182 +46,285 @@
   .msg.ok { background: rgba(47,163,122,0.18); color: var(--green); }
   .msg.err { background: rgba(232,101,79,0.18); color: var(--coral); }
   .hint { font-size: 12px; color: var(--chalk-dim); margin: 8px 0 0; line-height: 1.5; }
-  .warn-box { background: rgba(245,194,66,0.1); border: 1px solid rgba(245,194,66,0.3); border-radius: 10px; padding: 12px; font-size: 12.5px; color: var(--yellow); margin-bottom: 12px; line-height: 1.5; }
-  a.back { color: var(--chalk-dim); font-size: 12.5px; text-decoration: none; }
-  .session-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--navy-3); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: 12.5px; }
-  .session-info { display: flex; flex-direction: column; gap: 3px; color: var(--chalk-dim); }
-  .session-winner { color: var(--yellow); font-weight: 600; }
-  .session-del { background: rgba(232,101,79,0.15); color: var(--coral); border: none; border-radius: 8px; padding: 7px 10px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-  .session-del:disabled { opacity: 0.4; cursor: not-allowed; }
+  a.back, a.link { color: var(--chalk-dim); font-size: 12.5px; text-decoration: none; }
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .user-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--navy-3); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: 12.5px; }
+  .user-info { display: flex; flex-direction: column; gap: 2px; }
+  .user-email { font-weight: 600; }
+  .user-meta { color: var(--chalk-dim); font-size: 11.5px; }
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 7px; border-radius: 999px; margin-left: 6px; }
+  .pill-admin { background: rgba(245,194,66,0.2); color: var(--yellow); }
+  .revoke-btn { background: rgba(232,101,79,0.15); color: var(--coral); border: none; border-radius: 8px; padding: 7px 10px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .revoke-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .empty-note { color: var(--chalk-dim); font-size: 12.5px; }
+  .sessions-toggle { background: none; border: none; color: var(--chalk-dim); font-size: 11.5px; text-decoration: underline; cursor: pointer; padding: 0; margin-top: 2px; }
+  .sessions-panel { margin-top: 8px; display: none; }
+  .sessions-panel.open { display: block; }
+  .session-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid var(--navy); font-size: 12px; }
+  .session-row:first-child { border-top: none; }
+  .session-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .session-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-meta2 { color: var(--chalk-dim); font-size: 11px; }
+  .session-del-btn { background: rgba(232,101,79,0.15); color: var(--coral); border: none; border-radius: 8px; padding: 5px 9px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .gate { text-align: center; padding: 60px 20px; }
+  .gate .btn { max-width: 260px; margin: 16px auto 0; }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <a class="back" href="/">&larr; Back to app</a>
-    <h1>Admin</h1>
-    <p class="sub">Backups and destructive actions for the round robin database.</p>
-
-    <div class="card">
-      <h2>Admin token</h2>
-      <label for="token">Only needed if ADMIN_TOKEN is set on the server</label>
-      <input type="password" id="token" placeholder="Admin token (optional)" />
-      <button class="btn btn-ghost" id="saveToken">Save &amp; check status</button>
-      <div class="msg" id="statusMsg"></div>
+    <div id="gate" class="gate" style="display:none;">
+      <h1>Admin</h1>
+      <p class="sub" id="gateMsg">Sign in with an admin Google account to continue.</p>
+      <a class="btn btn-primary" href="/auth/google" style="display:inline-block; text-decoration:none; max-width:260px;">Sign in with Google</a>
     </div>
 
-    <div class="card" id="statusCard" style="display:none;">
-      <h2>Current status</h2>
-      <div class="status-grid" id="statusGrid"></div>
-    </div>
-
-    <div class="card">
-      <h2>Download database</h2>
-      <p class="hint">Downloads the raw SQLite file, including the live session and all archived history. Useful as a backup before doing anything risky.</p>
-      <button class="btn btn-primary" id="downloadBtn">Download .db file</button>
-      <div class="msg" id="downloadMsg"></div>
-    </div>
-
-    <div class="card">
-      <h2>Reset database</h2>
-      <div class="warn-box">
-        This permanently deletes the live session AND every archived past session for everyone. It cannot be undone. Download a backup first if you want to keep a copy.
+    <div id="main" style="display:none;">
+      <div class="topbar">
+        <div>
+          <a class="back" href="/">&larr; Back to app</a>
+          <h1>Admin</h1>
+          <p class="sub" id="whoami"></p>
+        </div>
+        <a class="link" href="/auth/logout">Sign out</a>
       </div>
-      <label for="confirmText">Type RESET to enable the button</label>
-      <input type="text" id="confirmText" placeholder="RESET" autocomplete="off" />
-      <button class="btn btn-danger" id="resetBtn" disabled>Reset database</button>
-      <div class="msg" id="resetMsg"></div>
-    </div>
 
-    <div class="card">
-      <h2>Recent sessions</h2>
-      <p class="hint">Delete individual archived sessions without touching anything else (the live session, if any, is untouched).</p>
-      <div id="sessionsList"></div>
-      <div class="msg" id="sessionsMsg"></div>
+      <div class="card">
+        <h2>Overall usage</h2>
+        <div class="status-grid" id="statusGrid"></div>
+      </div>
+
+      <div class="card">
+        <h2>Add an instance user</h2>
+        <p class="hint">Adds a Google account to the allowlist — they can then sign in and create their own sessions. This does not grant admin access (that's controlled by the ADMIN_EMAILS environment variable).</p>
+        <label for="newEmail">Email address</label>
+        <input type="email" id="newEmail" placeholder="name@example.com" autocomplete="off" />
+        <button class="btn btn-primary" id="addUserBtn">Add user</button>
+        <div class="msg" id="addUserMsg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Users</h2>
+        <div id="usersList"></div>
+        <div class="msg" id="usersMsg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Download database</h2>
+        <p class="hint">Downloads the raw SQLite file — every user's sessions and history. Useful as a backup.</p>
+        <button class="btn btn-ghost" id="downloadBtn">Download .db file</button>
+        <div class="msg" id="downloadMsg"></div>
+      </div>
     </div>
   </div>
 
 <script>
-  const tokenInput = document.getElementById('token');
-  const confirmInput = document.getElementById('confirmText');
-  const resetBtn = document.getElementById('resetBtn');
-  const statusMsg = document.getElementById('statusMsg');
-  const downloadMsg = document.getElementById('downloadMsg');
-  const resetMsg = document.getElementById('resetMsg');
-  const statusCard = document.getElementById('statusCard');
+  const gateEl = document.getElementById('gate');
+  const gateMsg = document.getElementById('gateMsg');
+  const mainEl = document.getElementById('main');
+  const whoamiEl = document.getElementById('whoami');
   const statusGrid = document.getElementById('statusGrid');
-
-  tokenInput.value = sessionStorage.getItem('pbr_admin_token') || '';
+  const usersList = document.getElementById('usersList');
+  const usersMsg = document.getElementById('usersMsg');
+  const addUserBtn = document.getElementById('addUserBtn');
+  const addUserMsg = document.getElementById('addUserMsg');
+  const newEmailInput = document.getElementById('newEmail');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const downloadMsg = document.getElementById('downloadMsg');
 
   function showMsg(el, text, ok) {
     el.textContent = text;
     el.className = 'msg show ' + (ok ? 'ok' : 'err');
   }
 
-  function authHeaders() {
-    const t = tokenInput.value.trim();
-    return t ? { 'x-admin-token': t } : {};
+  function fmtDate(ts) {
+    if (!ts) return 'never';
+    const d = new Date(ts);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function boot() {
+    const me = await (await fetch('/api/me')).json();
+    if (!me.authenticated) {
+      gateMsg.textContent = 'Sign in with an admin Google account to continue.';
+      gateEl.style.display = 'block';
+      return;
+    }
+    if (!me.isAdmin) {
+      gateMsg.textContent = `Signed in as ${me.email}, but this account doesn't have admin access.`;
+      gateEl.style.display = 'block';
+      return;
+    }
+    whoamiEl.textContent = 'Signed in as ' + me.email;
+    mainEl.style.display = 'block';
+    refreshStatus();
+    refreshUsers();
   }
 
   async function refreshStatus() {
     try {
-      const res = await fetch('/admin/api/status', { headers: authHeaders() });
-      if (res.status === 401) { showMsg(statusMsg, 'Wrong or missing admin token.', false); statusCard.style.display = 'none'; return; }
+      const res = await fetch('/admin/api/status');
+      if (!res.ok) throw new Error('status ' + res.status);
       const data = await res.json();
-      showMsg(statusMsg, 'Connected.' + (data.tokenRequired ? '' : ' (No token configured on server.)'), true);
-      statusCard.style.display = 'block';
       const kb = (data.dbSizeBytes / 1024).toFixed(1);
       statusGrid.innerHTML = [
-        ['Session phase', data.phase],
-        ['Format', data.mode === 'fixed' ? 'Fixed partners' : 'Individual'],
-        ['Players/teams in session', data.activeUnitCount],
-        ['Games logged', data.gamesInCurrentSession],
-        ['Archived sessions', data.archivedSessions],
+        ['Allowed users', data.userCount],
+        ['Total sessions', data.sessionCount],
+        ['Active sessions', data.activeSessionCount],
         ['DB size', kb + ' KB'],
       ].map(([lbl, val]) => `<div class="status-item"><span class="val">${val}</span><span class="lbl">${lbl}</span></div>`).join('');
-      refreshSessions();
     } catch (e) {
-      showMsg(statusMsg, 'Could not reach server: ' + e.message, false);
+      statusGrid.innerHTML = '<p class="empty-note">Could not load stats.</p>';
     }
   }
 
-  function topUnit(state) {
-    const rows = Object.values(state.units || {}).slice().sort((a, b) => {
-      const aw = a.gamesPlayed ? a.wins / a.gamesPlayed : 0;
-      const bw = b.gamesPlayed ? b.wins / b.gamesPlayed : 0;
-      if (bw !== aw) return bw - aw;
-      const ad = a.pointsFor - a.pointsAgainst, bd = b.pointsFor - b.pointsAgainst;
-      if (bd !== ad) return bd - ad;
-      return b.pointsFor - a.pointsFor;
-    });
-    return rows[0] || null;
-  }
-
-  async function refreshSessions() {
-    const listEl = document.getElementById('sessionsList');
+  async function refreshUsers() {
     try {
-      const res = await fetch('/admin/api/sessions', { headers: authHeaders() });
-      if (res.status === 401) { listEl.innerHTML = ''; return; }
+      const res = await fetch('/admin/api/users');
+      if (!res.ok) throw new Error('status ' + res.status);
       const data = await res.json();
-      const sessions = data.sessions || [];
-      if (sessions.length === 0) {
-        listEl.innerHTML = '<p class="empty-note">No archived sessions yet.</p>';
+      const users = data.users || [];
+      if (users.length === 0) {
+        usersList.innerHTML = '<p class="empty-note">No users yet.</p>';
         return;
       }
-      listEl.innerHTML = sessions.map((s) => {
-        const dt = new Date(s.endedAt);
-        const top = topUnit(s.state);
-        const modeLbl = s.mode === 'fixed' ? 'Fixed partners' : 'Individual';
-        const games = (s.state.log || []).length;
-        return `
-          <div class="session-row" data-id="${s.id}">
-            <div class="session-info">
-              <span>${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${modeLbl} · ${games} game${games !== 1 ? 's' : ''}</span>
-              ${top ? `<span class="session-winner">🏆 ${top.name}</span>` : ''}
+      usersList.innerHTML = users.map((u) => `
+        <div class="user-row" data-id="${u.id}" style="flex-direction:column; align-items:stretch;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+            <div class="user-info">
+              <span class="user-email">${u.email}${u.isAdmin ? '<span class="pill pill-admin">Admin</span>' : ''}</span>
+              <span class="user-meta">${u.sessionCount} session${u.sessionCount !== 1 ? 's' : ''} · last login ${fmtDate(u.lastLoginAt)}
+                ${u.sessionCount > 0 ? `· <button class="sessions-toggle" data-id="${u.id}">view sessions</button>` : ''}
+              </span>
             </div>
-            <button class="session-del" data-id="${s.id}">Delete</button>
-          </div>`;
-      }).join('');
-      listEl.querySelectorAll('.session-del').forEach((btn) => {
-        btn.addEventListener('click', () => deleteSession(btn.dataset.id, btn));
+            ${u.isAdmin ? '' : `<button class="revoke-btn" data-id="${u.id}" ${u.isAllowed ? '' : 'disabled'}>${u.isAllowed ? 'Revoke' : 'Revoked'}</button>`}
+          </div>
+          <div class="sessions-panel" data-panel-for="${u.id}"></div>
+        </div>`).join('');
+      usersList.querySelectorAll('.revoke-btn').forEach((btn) => {
+        if (btn.disabled) return;
+        btn.addEventListener('click', () => revokeUser(btn.dataset.id, btn));
+      });
+      usersList.querySelectorAll('.sessions-toggle').forEach((btn) => {
+        btn.addEventListener('click', () => toggleSessions(btn.dataset.id, btn));
       });
     } catch (e) {
-      listEl.innerHTML = '<p class="empty-note">Could not load sessions.</p>';
+      usersList.innerHTML = '<p class="empty-note">Could not load users.</p>';
     }
   }
 
-  async function deleteSession(id, btn) {
+  async function revokeUser(id, btn) {
+    if (!confirm('Revoke this user’s access? They will no longer be able to sign in. Their existing sessions and history are kept.')) return;
+    btn.disabled = true;
+    btn.textContent = 'Revoking…';
+    try {
+      const res = await fetch('/admin/api/users/' + encodeURIComponent(id) + '/revoke', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        showMsg(usersMsg, 'Access revoked.', true);
+        refreshUsers();
+        refreshStatus();
+      } else {
+        showMsg(usersMsg, 'Revoke failed: ' + (data.error || 'unknown error'), false);
+        btn.disabled = false; btn.textContent = 'Revoke';
+      }
+    } catch (e) {
+      showMsg(usersMsg, 'Revoke failed: ' + e.message, false);
+      btn.disabled = false; btn.textContent = 'Revoke';
+    }
+  }
+
+  function fmtShort(ts) {
+    if (!ts) return '';
+    return new Date(ts).toLocaleDateString();
+  }
+
+  async function toggleSessions(userId, btn) {
+    const panel = usersList.querySelector(`.sessions-panel[data-panel-for="${userId}"]`);
+    if (!panel) return;
+    if (panel.classList.contains('open')) {
+      panel.classList.remove('open');
+      btn.textContent = 'view sessions';
+      return;
+    }
+    btn.textContent = 'loading…';
+    try {
+      const res = await fetch(`/admin/api/users/${encodeURIComponent(userId)}/sessions`);
+      if (!res.ok) throw new Error('status ' + res.status);
+      const data = await res.json();
+      renderSessions(panel, data.sessions || []);
+      panel.classList.add('open');
+      btn.textContent = 'hide sessions';
+    } catch (e) {
+      panel.innerHTML = '<p class="empty-note">Could not load sessions.</p>';
+      panel.classList.add('open');
+      btn.textContent = 'hide sessions';
+    }
+  }
+
+  function renderSessions(panel, sessions) {
+    if (sessions.length === 0) {
+      panel.innerHTML = '<p class="empty-note">No sessions.</p>';
+      return;
+    }
+    panel.innerHTML = sessions.map((s) => `
+      <div class="session-row" data-session-id="${s.id}">
+        <div class="session-info">
+          <span class="session-title">${s.title || (s.mode === 'fixed' ? 'Fixed teams' : 'Individual')}</span>
+          <span class="session-meta2">${fmtShort(s.createdAt)} · ${s.endedAt ? 'ended' : 'active'}</span>
+        </div>
+        <button class="session-del-btn" data-id="${s.id}">Delete</button>
+      </div>`).join('');
+    panel.querySelectorAll('.session-del-btn').forEach((btn) => {
+      btn.addEventListener('click', () => deleteSession(btn.dataset.id, btn, panel));
+    });
+  }
+
+  async function deleteSession(sessionId, btn, panel) {
     if (!confirm('Delete this session permanently? This cannot be undone.')) return;
     btn.disabled = true;
     btn.textContent = 'Deleting…';
-    const sessionsMsg = document.getElementById('sessionsMsg');
     try {
-      const res = await fetch('/admin/api/sessions/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
-      if (res.status === 401) { showMsg(sessionsMsg, 'Wrong or missing admin token.', false); btn.disabled = false; btn.textContent = 'Delete'; return; }
+      const res = await fetch('/admin/api/sessions/' + encodeURIComponent(sessionId), { method: 'DELETE' });
       const data = await res.json();
       if (data.ok) {
-        showMsg(sessionsMsg, 'Session deleted.', true);
+        btn.closest('.session-row').remove();
+        if (!panel.querySelector('.session-row')) panel.innerHTML = '<p class="empty-note">No sessions.</p>';
+        refreshUsers();
         refreshStatus();
       } else {
-        showMsg(sessionsMsg, 'Delete failed: ' + (data.error || 'unknown error'), false);
         btn.disabled = false; btn.textContent = 'Delete';
       }
     } catch (e) {
-      showMsg(sessionsMsg, 'Delete failed: ' + e.message, false);
       btn.disabled = false; btn.textContent = 'Delete';
     }
   }
 
-  document.getElementById('saveToken').addEventListener('click', () => {
-    sessionStorage.setItem('pbr_admin_token', tokenInput.value.trim());
-    refreshStatus();
+  addUserBtn.addEventListener('click', async () => {
+    const email = newEmailInput.value.trim();
+    if (!email) return;
+    addUserBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      const data = await res.json();
+      if (res.ok) {
+        showMsg(addUserMsg, email + ' can now sign in.', true);
+        newEmailInput.value = '';
+        refreshUsers();
+        refreshStatus();
+      } else {
+        showMsg(addUserMsg, 'Failed: ' + (data.error || 'unknown error'), false);
+      }
+    } catch (e) {
+      showMsg(addUserMsg, 'Failed: ' + e.message, false);
+    } finally {
+      addUserBtn.disabled = false;
+    }
   });
 
-  document.getElementById('downloadBtn').addEventListener('click', async () => {
+  downloadBtn.addEventListener('click', async () => {
     downloadMsg.className = 'msg';
     try {
-      const res = await fetch('/admin/api/db', { headers: authHeaders() });
-      if (res.status === 401) { showMsg(downloadMsg, 'Wrong or missing admin token.', false); return; }
+      const res = await fetch('/admin/api/db');
       if (!res.ok) { showMsg(downloadMsg, 'Download failed (status ' + res.status + ').', false); return; }
       const blob = await res.blob();
       const disposition = res.headers.get('content-disposition') || '';
@@ -238,33 +341,7 @@
     }
   });
 
-  confirmInput.addEventListener('input', () => {
-    resetBtn.disabled = confirmInput.value.trim() !== 'RESET';
-  });
-
-  resetBtn.addEventListener('click', async () => {
-    if (!confirm('This deletes the live session and all archived history for everyone, permanently. Continue?')) return;
-    resetMsg.className = 'msg';
-    resetBtn.disabled = true;
-    try {
-      const res = await fetch('/admin/api/reset', { method: 'POST', headers: authHeaders() });
-      if (res.status === 401) { showMsg(resetMsg, 'Wrong or missing admin token.', false); return; }
-      const data = await res.json();
-      if (data.ok) {
-        showMsg(resetMsg, 'Database reset. Everyone connected has been sent back to setup.', true);
-        confirmInput.value = '';
-        refreshStatus();
-      } else {
-        showMsg(resetMsg, 'Reset failed: ' + (data.error || 'unknown error'), false);
-      }
-    } catch (e) {
-      showMsg(resetMsg, 'Reset failed: ' + e.message, false);
-    } finally {
-      confirmInput.dispatchEvent(new Event('input'));
-    }
-  });
-
-  refreshStatus();
+  boot();
 </script>
 </body>
 </html>
