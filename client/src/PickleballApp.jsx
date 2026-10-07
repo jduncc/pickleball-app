@@ -594,8 +594,35 @@ function CourtsTab({ state, dispatch, role = "owner", ended = false }) {
   const multiCourt = state.courtsState.length >= 2;
   const allCourtsPlaying = multiCourt && state.courtsState.every((c) => c.match);
 
+  // Host-only: add/remove courts while the session is running. Removing is
+  // only possible for a court with no game in progress (the reducer enforces
+  // it too); adding is capped at what the active players could actually fill.
+  const courtCount = state.courtsState.length;
+  const perCourt = state.mode === "fixed" ? 2 : 4; // teams or players needed per court
+  const activeCount = Object.values(state.units).filter((u) => u.active !== false).length;
+  const maxCourts = Math.max(courtCount, Math.floor(activeCount / perCourt));
+  const canAddCourt = courtCount < maxCourts;
+  const canRemoveCourt = courtCount > 1 && state.courtsState.some((c) => !c.match);
+
   return (
     <div className="pbr-courts-tab">
+      {isOwner && !ended && (
+        <div className="pbr-court-count">
+          <span className="pbr-court-count-label">Courts</span>
+          <div className="pbr-stepper">
+            <button className="pbr-btn pbr-btn-icon pbr-btn-ghost pbr-court-count-btn" aria-label="Remove a court" disabled={!canRemoveCourt}
+              onClick={() => dispatch({ type: "SET_COURT_COUNT_MIDSESSION", count: courtCount - 1 })}><Minus size={16} /></button>
+            <span className="pbr-stepper-val">{courtCount}</span>
+            <button className="pbr-btn pbr-btn-icon pbr-btn-ghost pbr-court-count-btn" aria-label="Add a court" disabled={!canAddCourt}
+              onClick={() => dispatch({ type: "SET_COURT_COUNT_MIDSESSION", count: courtCount + 1 })}><Plus size={16} /></button>
+          </div>
+          <span className="pbr-court-count-hint">
+            {courtCount > 1 && !canRemoveCourt ? "Only an empty court can be removed"
+              : !canAddCourt ? `Not enough players for court ${courtCount + 1}`
+              : state.shuffleArmed ? "New court starts after the shuffle" : ""}
+          </span>
+        </div>
+      )}
       {waitingIds.length > 0 && (
         <div className="pbr-sitting-banner">
           <Coffee size={14} />
@@ -1072,6 +1099,12 @@ export function Styles() {
       .pbr-order-controls { display: flex; gap: 4px; }
       .pbr-btn-tiny { padding: 6px; }
 
+      .pbr-court-count { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--navy-2); border-radius: 12px; padding: 8px 12px; }
+      .pbr-court-count-label { font-size: 13px; font-weight: 700; color: var(--chalk-dim); }
+      .pbr-court-count .pbr-stepper { gap: 10px; }
+      .pbr-court-count-btn { padding: 6px; }
+      .pbr-court-count-btn:disabled { opacity: 0.35; }
+      .pbr-court-count-hint { font-size: 12px; color: var(--chalk-dim); flex: 1; min-width: 120px; }
       .pbr-stepper { display: flex; align-items: center; gap: 14px; }
       .pbr-stepper-val { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
 

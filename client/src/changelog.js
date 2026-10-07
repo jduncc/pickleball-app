@@ -20,6 +20,8 @@ export const RELEASES = [
     changes: [
       "New: A built-in user manual and this version history, linked from the bottom of the app.",
       "New: Edit score. Fix the score of a finished game from the Log tab (tap the pencil). It only changes the score and the standings, so the next matchup stays exactly as it was.",
+      "New: Admins now see an Admin link in the footer, next to the manual and version history.",
+      "New: Add a court in the middle of a session. Use the Courts counter at the top of the Courts tab; the new court starts a game right away.",
       "Fixed: On iPhones, the app no longer zooms in when you tap a text box or double-tap a button.",
     ],
   },

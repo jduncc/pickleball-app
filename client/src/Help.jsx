@@ -134,6 +134,15 @@ function Manual() {
         </p>
         <Fig name="courts-edit-lineup" alt="Edit lineup mode with drop-downs for each player" caption="Edit lineup" />
 
+        <h3 className="pbr-help-h3">Adding a court during a session</h3>
+        <p>
+          Forgot a court, or more people showed up? The host sees a <strong>Courts</strong> counter at the top of the Courts
+          tab. Tap <strong>+</strong> and a new court opens right away with the players who have waited longest. The{" "}
+          <strong>+</strong> greys out when there aren't enough players to fill another court. A court can only be removed
+          while it has no game on it. If a shuffle is waiting (see below), the new court starts once the shuffle is applied
+          or cancelled.
+        </p>
+
         <h3 className="pbr-help-h3">More than one court</h3>
         <p>
           With two or more courts, the same groups can end up playing together all night. Tap <strong>Shuffle courts</strong> to
@@ -230,8 +239,8 @@ function Manual() {
       <section className="pbr-card" id="admin">
         <h2>Admin</h2>
         <p>
-          Admins have an extra page at <strong>/admin</strong> on the same address as the app (it isn't linked from the
-          app, so type it in). It's where you:
+          Admins have an extra page at <strong>/admin</strong> on the same address as the app. When you're signed in as an
+          admin, an <strong>Admin</strong> link appears in the footer at the bottom of the screen. It's where you:
         </p>
         <ul>
           <li>See <strong>overall usage</strong>: allowed users, total and active sessions, and database size.</li>
