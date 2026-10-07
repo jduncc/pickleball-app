@@ -887,6 +887,45 @@ export function reducer(state, action) {
       return withNextPreview({ ...state, units, opponentHist, partnerHist, matchHistory, courtsState, log: state.log.slice(0, -1) });
     }
 
+    case "EDIT_SCORE": {
+      // Corrects the score of an already-finished game WITHOUT touching the
+      // schedule. Standings (wins/losses/points) are the only thing a score
+      // feeds; pairing and sit-out order depend on games played, sit streaks,
+      // last-played times and matchup history — none of which change here.
+      // That is why this is preferred over "undo, then re-enter": undo rolls
+      // back a game's stats but not the fairness bookkeeping, so re-entering
+      // it could line up a different next game.
+      const { gameId, scoreA, scoreB } = action;
+      const isScore = (n) => typeof n === "number" && Number.isInteger(n) && n >= 0;
+      if (!isScore(scoreA) || !isScore(scoreB) || scoreA === scoreB) return state;
+      const idx = state.log.findIndex((e) => e.id === gameId);
+      if (idx === -1) return state;
+      const old = state.log[idx];
+      if (old.scoreA === scoreA && old.scoreB === scoreB) return state;
+
+      const wasAWin = old.scoreA > old.scoreB;
+      const isAWin = scoreA > scoreB;
+      const units = { ...state.units };
+      const adjust = (ids, oldFor, oldAgainst, newFor, newAgainst, wasWin, isWin) => {
+        ids.forEach((id) => {
+          const u = units[id];
+          if (!u) return; // unit removed since the game was played
+          units[id] = {
+            ...u,
+            pointsFor: u.pointsFor - oldFor + newFor,
+            pointsAgainst: u.pointsAgainst - oldAgainst + newAgainst,
+            wins: u.wins - (wasWin ? 1 : 0) + (isWin ? 1 : 0),
+            losses: u.losses - (wasWin ? 0 : 1) + (isWin ? 0 : 1),
+          };
+        });
+      };
+      adjust(old.sideA, old.scoreA, old.scoreB, scoreA, scoreB, wasAWin, isAWin);
+      adjust(old.sideB, old.scoreB, old.scoreA, scoreB, scoreA, !wasAWin, !isAWin);
+
+      const log = state.log.map((e, i) => (i === idx ? { ...e, scoreA, scoreB } : e));
+      return { ...state, units, log };
+    }
+
     case "TOGGLE_ACTIVE": {
       const u = state.units[action.id];
       if (!u || u.onCourt) return state;

@@ -870,6 +870,21 @@ export function StandingsTab({ state }) {
 function LogTab({ state, dispatch, role = "owner", ended = false, title = null, onBack, onEndSession }) {
   const isOwner = role === "owner";
   const entries = [...state.log].reverse();
+  const canEdit = isOwner && !ended;
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState({ a: "", b: "" });
+
+  const startEdit = (e) => { setEditingId(e.id); setEditDraft({ a: String(e.scoreA), b: String(e.scoreB) }); };
+  const cancelEdit = () => setEditingId(null);
+  const parsed = (v) => (/^\d{1,3}$/.test(v) ? parseInt(v, 10) : null);
+  const draftA = parsed(editDraft.a);
+  const draftB = parsed(editDraft.b);
+  const draftValid = draftA !== null && draftB !== null && draftA !== draftB;
+  const saveEdit = () => {
+    if (!draftValid) return;
+    dispatch({ type: "EDIT_SCORE", gameId: editingId, scoreA: draftA, scoreB: draftB });
+    setEditingId(null);
+  };
 
   return (
     <div className="pbr-log-tab">
@@ -889,11 +904,24 @@ function LogTab({ state, dispatch, role = "owner", ended = false, title = null, 
           {entries.map((e) => {
             const aWon = e.scoreA > e.scoreB;
             return (
-              <li key={e.id} className="pbr-log-row">
+              <li key={e.id} className={"pbr-log-row" + (canEdit ? " pbr-log-row-editable" : "")}>
                 <span className="pbr-log-court">{courtLabel(state.courtsState, e.courtId)}{typeof e.durationMs === "number" ? ` · ${formatDuration(e.durationMs)}` : ""}</span>
                 <span className={"pbr-log-side" + (aWon ? " won" : "")}>{sideLabel(state.units, e.sideA)}</span>
                 <span className="pbr-log-score">{e.scoreA} – {e.scoreB}</span>
                 <span className={"pbr-log-side" + (!aWon ? " won" : "")}>{sideLabel(state.units, e.sideB)}</span>
+                {canEdit && editingId !== e.id && (
+                  <button className="pbr-icon-btn pbr-log-edit" title="Edit score" aria-label="Edit score" onClick={() => startEdit(e)}><Pencil size={14} /></button>
+                )}
+                {canEdit && editingId === e.id && (
+                  <div className="pbr-log-editor">
+                    <input className="pbr-log-edit-input" inputMode="numeric" aria-label="Score for first side" value={editDraft.a} onChange={(ev) => setEditDraft((d) => ({ ...d, a: ev.target.value }))} onKeyDown={(ev) => { if (ev.key === "Enter") saveEdit(); if (ev.key === "Escape") cancelEdit(); }} autoFocus />
+                    <span>–</span>
+                    <input className="pbr-log-edit-input" inputMode="numeric" aria-label="Score for second side" value={editDraft.b} onChange={(ev) => setEditDraft((d) => ({ ...d, b: ev.target.value }))} onKeyDown={(ev) => { if (ev.key === "Enter") saveEdit(); if (ev.key === "Escape") cancelEdit(); }} />
+                    <button className="pbr-btn pbr-btn-primary pbr-btn-small" disabled={!draftValid} onClick={saveEdit}><Check size={14} /> Save</button>
+                    <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={cancelEdit}><X size={14} /> Cancel</button>
+                    {draftA !== null && draftB !== null && draftA === draftB && <span className="pbr-log-edit-hint">Scores can't tie</span>}
+                  </div>
+                )}
               </li>
             );
           })}
@@ -1132,6 +1160,12 @@ export function Styles() {
       .pbr-log-header-actions .pbr-btn-small { margin-top: 0; }
       .pbr-log-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
       .pbr-log-row { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 8px; background: var(--navy-3); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; }
+      .pbr-log-row-editable { grid-template-columns: auto 1fr auto 1fr auto; }
+      .pbr-log-edit { padding: 6px; opacity: 0.75; background: transparent; }
+      .pbr-log-editor { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
+      .pbr-log-edit-input { width: 56px; text-align: center; font-size: 16px; font-weight: 700; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--navy-2); background: var(--navy); color: var(--chalk); }
+      .pbr-log-editor .pbr-btn-small { margin-top: 0; }
+      .pbr-log-edit-hint { color: var(--coral); font-size: 12px; }
       .pbr-log-court { color: var(--chalk-dim); font-size: 11px; }
       .pbr-log-side { text-align: right; }
       .pbr-log-side.won { color: var(--yellow); font-weight: 700; }
