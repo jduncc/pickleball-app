@@ -8,5 +8,6 @@
   "theme_color": "#14213A",
   "background_color": "#14213A",
   "display": "standalone",
+  "orientation": "portrait",
   "start_url": "/"
 }

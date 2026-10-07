@@ -1,0 +1,48 @@
+/* Styles for the in-app manual (Help.jsx). Uses the colour variables defined
+   on .pbr-app in PickleballApp.jsx, so it always matches the rest of the app. */
+
+.pbr-help { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 24px; }
+
+.pbr-help-top { display: flex; align-items: center; gap: 10px; }
+.pbr-help-top h1 { font-size: 22px; margin: 0; }
+.pbr-help-back { background: var(--navy-2); border: none; color: var(--chalk); border-radius: 10px; padding: 9px; display: flex; cursor: pointer; }
+
+.pbr-help-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--navy); border: 1px solid var(--navy-3); border-radius: 12px; padding: 4px; }
+.pbr-help-tab { text-align: center; padding: 10px 8px; border-radius: 9px; font-size: 13.5px; font-weight: 700; color: var(--chalk-dim); text-decoration: none; }
+.pbr-help-tab.active { background: var(--green); color: var(--navy); }
+
+.pbr-help .pbr-card h2 { margin: 0 0 8px; }
+.pbr-help p { font-size: 14px; line-height: 1.6; color: var(--chalk); margin: 8px 0 0; }
+.pbr-help p.dim { color: var(--chalk-dim); }
+.pbr-help ul, .pbr-help ol { margin: 8px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6; }
+.pbr-help li { margin: 5px 0; }
+.pbr-help strong { color: var(--chalk); }
+.pbr-help a { color: var(--yellow); }
+.pbr-help-note { background: rgba(245,194,66,0.1); color: var(--chalk); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.55; margin-top: 10px; }
+
+.pbr-help-toc { columns: 2; column-gap: 18px; padding-left: 0; list-style: none; margin: 8px 0 0; }
+.pbr-help-toc li { margin: 6px 0; break-inside: avoid; }
+.pbr-help-toc a { text-decoration: none; font-weight: 600; font-size: 13.5px; }
+
+.pbr-help-fig { margin: 12px 0 2px; text-align: center; }
+.pbr-help-fig img { width: 100%; max-width: 270px; height: auto; border-radius: 16px; border: 1px solid var(--navy-3); box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+.pbr-help-fig figcaption { font-size: 12px; color: var(--chalk-dim); margin-top: 6px; }
+.pbr-help-figs { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+
+.pbr-help-h3 { font-size: 14px; font-weight: 800; color: var(--yellow); margin: 18px 0 0; }
+
+.pbr-help section[id] { scroll-margin-top: 12px; }
+
+.pbr-release { border-top: 1px solid var(--navy-3); padding-top: 14px; margin-top: 14px; }
+.pbr-release:first-of-type { border-top: none; padding-top: 0; margin-top: 8px; }
+.pbr-release-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pbr-release-head h3 { margin: 0; font-size: 17px; }
+.pbr-release-date { font-size: 12.5px; color: var(--chalk-dim); }
+.pbr-release ul { list-style: none; padding-left: 0; }
+.pbr-release li { padding-left: 0; }
+.pbr-release-tag { display: inline-block; min-width: 66px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--green); }
+.pbr-release-tag.fixed { color: var(--coral); }
+.pbr-release-tag.improved { color: var(--yellow); }
+
+.pbr-footer a { color: inherit; }
+.pbr-footer-links { margin-bottom: 4px; font-size: 12px; }
