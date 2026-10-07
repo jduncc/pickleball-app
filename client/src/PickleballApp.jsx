@@ -978,6 +978,7 @@ export function Styles() {
       * { box-sizing: border-box; }
       html, body, #root { height: 100%; }
 
+      html, body { touch-action: manipulation; } /* no double-tap-to-zoom on iOS */
       .pbr-app {
         --navy: #14213A;
         --navy-2: #1C2E4C;
