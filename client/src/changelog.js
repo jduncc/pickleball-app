@@ -15,6 +15,15 @@
 
 export const RELEASES = [
   {
+    version: "1.2.0",
+    date: "2026-10-14",
+    changes: [
+      "Improved: Fairer sit-outs. The app now counts how many times each person has sat, so nobody sits a second time while someone is still waiting for their first.",
+      "Improved: Partners. When a repeat partner can't be avoided, the app repeats the pair that played together longest ago, so you don't get the same partner in back-to-back games.",
+      "Fixed: Swapping someone out of a game (Edit lineup, or tapping a name to sit out) no longer sends them to the back of the line. They keep their place and play the next game.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-07",
     changes: [

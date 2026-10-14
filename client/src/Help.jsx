@@ -132,7 +132,23 @@ function Manual() {
           Tap that player's name on the court. The app asks you to confirm, then swaps in whoever is next in line. For a
           different swap, tap <strong>Edit lineup</strong>, choose the replacement in the drop-downs, and tap <strong>Done</strong>.
         </p>
+        <p>
+          The player who sits out this way is counted as having sat, and they play the next game. They keep their place in
+          line rather than being sent to the back.
+        </p>
         <Fig name="courts-edit-lineup" alt="Edit lineup mode with drop-downs for each player" caption="Edit lineup" />
+
+        <h3 className="pbr-help-h3">How the app decides who sits</h3>
+        <p>
+          The app counts how many times each person has sat out. Nobody sits twice in a row, and nobody sits a second time
+          while someone is still waiting for their first sit. After that it looks at games played, then who has waited
+          longest. When two courts finish at different times, a second sit can still come early for someone, because the
+          players on the other court haven't had their turn yet.
+        </p>
+        <p>
+          For partners, it uses every possible pairing before repeating one. When a repeat can't be avoided, it repeats the
+          pair that played together longest ago, so you won't get the same partner in two games in a row.
+        </p>
 
         <h3 className="pbr-help-h3">Adding a court during a session</h3>
         <p>
