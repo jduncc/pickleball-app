@@ -146,8 +146,15 @@ function Manual() {
           players on the other court haven't had their turn yet.
         </p>
         <p>
-          For partners, it uses every possible pairing before repeating one. When a repeat can't be avoided, it repeats the
-          pair that played together longest ago, so you won't get the same partner in two games in a row.
+          For partners, it uses every possible pairing before repeating one. When a repeat can't be avoided, it avoids
+          replaying the exact same game (the same two teams against each other), and then repeats the pair that played
+          together longest ago, so you won't get the same partner in two games in a row.
+        </p>
+        <h3 className="pbr-help-h3">Who serves first</h3>
+        <p>
+          On every court, the <strong>top team serves first</strong>, marked with a green <strong>Serves first</strong> label.
+          The app keeps this fair by counting how often each player has been on top and putting the team with the fewer
+          counts there. When the same two teams meet again, the sides flip.
         </p>
 
         <h3 className="pbr-help-h3">Adding a court during a session</h3>

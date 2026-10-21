@@ -738,6 +738,7 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch
   return (
     <div className="pbr-match">
       <div className="pbr-court-svg-wrap"><CourtLines /></div>
+      <div className="pbr-serve-tag">Serves first</div>
       <div className="pbr-side pbr-side-a">
         {editing ? (
           <div className="pbr-lineup-edit">
@@ -1153,6 +1154,7 @@ export function Styles() {
       .pbr-court-lines-svg { width: 100%; height: 100%; }
       .pbr-side { position: relative; display: flex; justify-content: space-between; align-items: center; padding: 10px 4px; }
       .pbr-side-a { border-left: 3px solid var(--green); padding-left: 12px; }
+      .pbr-serve-tag { position: relative; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--green); padding: 2px 0 0 15px; }
       .pbr-side-b { border-left: 3px solid var(--coral); padding-left: 12px; }
       .pbr-side-names { font-size: 15px; font-weight: 600; }
       .pbr-name-tap { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; border-bottom: 1px dashed transparent; }

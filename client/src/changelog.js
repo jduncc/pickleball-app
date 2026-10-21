@@ -15,6 +15,14 @@
 
 export const RELEASES = [
   {
+    version: "1.3.0",
+    date: "2026-10-21",
+    changes: [
+      "New: Serves first. The top team on each court serves first, with a green label, and the app balances who is on top so serving first is shared fairly. When the same two teams meet again, the sides flip.",
+      "Fixed: In small groups the app could replay the exact same game (the same two teams against each other) over and over. It now avoids replaying a game before trying other matchups.",
+    ],
+  },
+  {
     version: "1.2.0",
     date: "2026-10-14",
     changes: [

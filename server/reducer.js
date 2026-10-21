@@ -66,6 +66,19 @@ const tierCmp = (a, b) =>
   (a.lastPlayedAt || 0) - (b.lastPlayedAt || 0) ||
   (a.lastPlayedSeq || 0) - (b.lastPlayedSeq || 0);
 
+// --- Serving first -----------------------------------------------------------
+// Side A (shown on top) is always the team that serves first. To keep that
+// fair, each unit counts how many games it has been on Side A (firstServes)
+// and every new match puts the side with the lower total on top (random on a
+// tie). This also flips the sides automatically whenever a matchup repeats.
+const serveLoad = (units, ids) => ids.reduce((sum, id) => sum + ((units[id] && units[id].firstServes) || 0), 0);
+function orientForServe(match, units) {
+  const a = serveLoad(units, match.sideA);
+  const b = serveLoad(units, match.sideB);
+  if (a < b || (a === b && Math.random() < 0.5)) return match;
+  return { ...match, sideA: match.sideB, sideB: match.sideA };
+}
+
 function combinations(arr, k) {
   const res = [];
   const rec = (start, combo) => {
@@ -89,6 +102,11 @@ export function computeWaitingIds(units) {
 }
 
 function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHistory) {
+  const result = pickBestUnoriented(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHistory);
+  return result ? orientForServe(result, unitsMap) : null;
+}
+
+function pickBestUnoriented(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHistory) {
   const required = mode === "fixed" ? 2 : 4; // units needed to fill this court
   if (waitingIds.length < required) return null;
 
@@ -171,12 +189,12 @@ function pickBest(waitingIds, unitsMap, mode, opponentHist, partnerHist, matchHi
       let oppScore = 0;
       for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
       // Partner repeats first (exhaust every pairing before repeating one),
-      // then prefer repeating the pair that partnered longest ago, then
-      // opponent variety.
+      // then avoid replaying the exact same matchup, then prefer repeating
+      // the pair that partnered longest ago, then opponent variety.
       const recency = recencyOfSides(partnerHist, [sideA, sideB]);
       const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
       const posSum = combo.reduce((s, id) => s + posIndex[id], 0);
-      const key = [partnerScore, recency, oppScore, exactCount, posSum];
+      const key = [partnerScore, exactCount, recency, oppScore, posSum];
       const cmp = bestKey ? cmpKey(key, bestKey) : -1;
       if (!bestKey || cmp < 0) {
         bestKey = key;
@@ -234,10 +252,10 @@ function bestSplitForGroup(group, mode, opponentHist, partnerHist, matchHistory)
     let oppScore = 0;
     for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
     const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
-    // One number, ordered: partner repeats >> how recently the repeated
-    // pair last partnered >> opponent repeats and exact rematches. The
+    // One number, ordered: partner repeats >> exact rematches >> how recently
+    // the repeated pair last partnered >> opponent repeats. The
     // multipliers keep each tier from spilling into the next.
-    const score = partnerScore * 1e9 + recencyOfSides(partnerHist, [sideA, sideB]) * 1e4 + oppScore + exactCount * 3;
+    const score = partnerScore * 1e9 + exactCount * 1e8 + recencyOfSides(partnerHist, [sideA, sideB]) * 1e4 + oppScore;
     if (score < bestScore) { bestScore = score; best = { sideA, sideB }; }
   }
   return { ...best, score: bestScore };
@@ -512,6 +530,7 @@ function computeNextPreview(state, court) {
   [...sideA, ...sideB].forEach((id) => {
     units[id] = { ...units[id], gamesPlayed: units[id].gamesPlayed + 1, onCourt: false, lastPlayedAt: now, lastPlayedSeq: state.orderCounter };
   });
+  sideA.forEach((id) => { units[id] = { ...units[id], firstServes: (units[id].firstServes || 0) + 1 }; });
   const opponentHist = { ...state.opponentHist };
   sideA.forEach((a) => sideB.forEach((b) => { const k = pairKey(a, b); opponentHist[k] = (opponentHist[k] || 0) + 1; }));
   let partnerHist = state.partnerHist[LAST] ? { ...state.partnerHist } : withLastFromLog(state.partnerHist, state.log);
@@ -729,6 +748,7 @@ export function reducer(state, action) {
       sideA.forEach((id) => {
         const u = { ...units[id] };
         u.gamesPlayed += 1; u.pointsFor += scoreA; u.pointsAgainst += scoreB;
+        u.firstServes = (u.firstServes || 0) + 1;
         if (aWon) u.wins += 1; else u.losses += 1;
         u.onCourt = false; u.lastPlayedAt = endedAt; u.lastPlayedSeq = order;
         units[id] = u;
@@ -822,7 +842,8 @@ export function reducer(state, action) {
 
         if (layout) {
           finalUnits = { ...normalizedUnits };
-          layout.forEach((m) => {
+          const oriented = layout.map((m) => orientForServe(m, normalizedUnits)); // new array: the layout may be a stored plan round
+          oriented.forEach((m) => {
             [...m.sideA, ...m.sideB].forEach((id) => { finalUnits[id] = { ...finalUnits[id], onCourt: true }; });
           });
           // Same miss-streak bookkeeping fillAllEmptyCourts does normally:
@@ -833,7 +854,7 @@ export function reducer(state, action) {
           });
           const startedAt = Date.now();
           newCourtsState = courtsState.map((c) => {
-            const m = layout.find((l) => l.courtId === c.id);
+            const m = oriented.find((l) => l.courtId === c.id);
             return m ? { ...c, match: { sideA: m.sideA, sideB: m.sideB, startedAt } } : c;
           });
           if (noBench && shufflePlan) shufflePlan = { ...shufflePlan, index: shufflePlan.index + 1 };
@@ -890,6 +911,7 @@ export function reducer(state, action) {
       lastEntry.sideA.forEach((id) => {
         const u = { ...units[id] };
         u.gamesPlayed -= 1; u.pointsFor -= lastEntry.scoreA; u.pointsAgainst -= lastEntry.scoreB;
+        u.firstServes = Math.max(0, (u.firstServes || 0) - 1);
         if (aWon) u.wins -= 1; else u.losses -= 1;
         u.onCourt = true;
         units[id] = u;
