@@ -10,6 +10,7 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - SESSION_SECRET=${SESSION_SECRET:-}
       - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      - SUPPORT_TOKEN=${SUPPORT_TOKEN:-}
       - APP_VERSION=${APP_VERSION:-}
       - NODE_ENV=${NODE_ENV:-production}
     volumes:

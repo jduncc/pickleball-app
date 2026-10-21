@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { reducer, initialState } from "./reducer.js";
+import { registerSupportRoutes } from "./support.js";
 import passport from "passport";
 import {
   db, DATA_DIR, DB_PATH, seedAdminEmails, migrateLegacyData, clearMigrationPlaceholderTitles,
@@ -347,6 +348,9 @@ app.delete("/admin/api/sessions/:id", requireAdminAuth, (req, res) => {
   io.to(roomFor(row.id)).emit("deleted");
   res.json({ ok: true });
 });
+
+// Token-protected, read-only troubleshooting endpoints (off unless SUPPORT_TOKEN is set).
+registerSupportRoutes(app, { db, DB_PATH });
 
 app.get("/admin/api/db", requireAdminAuth, (req, res) => {
   try {
