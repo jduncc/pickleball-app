@@ -18,6 +18,13 @@ footer). **Any change a player or host can see needs three things:**
    new entry: `cd server && npm version minor --no-git-tag-version`
    (or `npm version 1.2.0 --no-git-tag-version`). Run `git pull` first.
 
+4. **Scheduling rules:** if you change anything in `server/reducer.js` that affects
+   who plays, who sits, how teams are picked, shuffles, serve order or what a
+   manual action does to the fairness counters, update **`client/src/Scheduling.jsx`**
+   (the "How scheduling works" page at `/help/scheduling`) in the same commit and
+   set `SCHEDULING_DOC_VERSION` in that file to the release. Keep its numbered
+   priority lists in the same order as the code.
+
 Purely internal changes (refactors, infrastructure, tests) don't need an entry.
 
 ### Versioning rules

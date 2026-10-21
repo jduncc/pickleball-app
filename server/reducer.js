@@ -1,3 +1,5 @@
+// NOTE: the scheduling rules in this file are documented in plain language in
+// client/src/Scheduling.jsx (the /help/scheduling page). Keep it in sync.
 // Authoritative game state + scheduling logic.
 // This runs ONLY on the server. Clients never compute matches themselves —
 // they send actions and render whatever state the server broadcasts back.
@@ -233,6 +235,18 @@ function determineShufflePlayingSet(units, totalRequired) {
 // Score + best partner split for a single court's group of players, with NO
 // fairness constraint at all (fairness was already decided by
 // determineShufflePlayingSet) — only repeat-avoidance for variety.
+// One number, ordered: partner repeats >> exact rematches >> how recently
+// the repeated pair last partnered >> opponent repeats. The multipliers keep
+// each tier from spilling into the next. Lower is better.
+function scoreSplit(sideA, sideB, opponentHist, partnerHist, matchHistory) {
+  const partnerScore = (partnerHist[pairKey(...sideA)] || 0) + (partnerHist[pairKey(...sideB)] || 0);
+  let oppScore = 0;
+  for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
+  const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
+  return partnerScore * 1e9 + exactCount * 1e8 + recencyOfSides(partnerHist, [sideA, sideB]) * 1e4 + oppScore;
+}
+const scoreTier = (score) => Math.floor(score / 1e8); // partner repeats + exact rematches only
+
 function bestSplitForGroup(group, mode, opponentHist, partnerHist, matchHistory) {
   if (mode === "fixed") {
     const [x, y] = group;
@@ -248,14 +262,7 @@ function bestSplitForGroup(group, mode, opponentHist, partnerHist, matchHistory)
   let best = null;
   let bestScore = Infinity;
   for (const [sideA, sideB] of splits) {
-    const partnerScore = (partnerHist[pairKey(...sideA)] || 0) + (partnerHist[pairKey(...sideB)] || 0);
-    let oppScore = 0;
-    for (const x of sideA) for (const y of sideB) oppScore += opponentHist[pairKey(x, y)] || 0;
-    const exactCount = (matchHistory && matchHistory[matchSig(sideA, sideB)]) || 0;
-    // One number, ordered: partner repeats >> exact rematches >> how recently
-    // the repeated pair last partnered >> opponent repeats. The
-    // multipliers keep each tier from spilling into the next.
-    const score = partnerScore * 1e9 + exactCount * 1e8 + recencyOfSides(partnerHist, [sideA, sideB]) * 1e4 + oppScore;
+    const score = scoreSplit(sideA, sideB, opponentHist, partnerHist, matchHistory);
     if (score < bestScore) { bestScore = score; best = { sideA, sideB }; }
   }
   return { ...best, score: bestScore };
@@ -305,6 +312,46 @@ function estimateAssignmentSpace(totalPlayers, perCourt) {
   }
   return space;
 }
+
+// Every complete layout (who plays on which court, and how each court splits
+// into sides) with its score — used by RANDOMIZE, which has to be able to skip
+// the layout currently on the courts. Falls back to random sampling when the
+// space is too big to list.
+function listLayouts(courtIds, players, mode, opponentHist, partnerHist, matchHistory) {
+  const perCourt = mode === "fixed" ? 2 : 4;
+  const splitsOf = (g) => (mode === "fixed"
+    ? [[[g[0]], [g[1]]]]
+    : [[[g[0], g[1]], [g[2], g[3]]], [[g[0], g[2]], [g[1], g[3]]], [[g[0], g[3]], [g[1], g[2]]]]);
+  const scored = (g) => splitsOf(g).map(([a, b]) => ({ sideA: a, sideB: b, score: scoreSplit(a, b, opponentHist, partnerHist, matchHistory) }));
+  const out = [];
+  if (estimateAssignmentSpace(players.length, perCourt) * Math.pow(mode === "fixed" ? 1 : 3, courtIds.length) <= ASSIGNMENT_SEARCH_CAP) {
+    const rec = (ci, remaining, acc, total) => {
+      if (ci === courtIds.length) { out.push({ layout: acc, score: total }); return; }
+      for (const g of combinations(remaining, perCourt)) {
+        const gs = new Set(g);
+        const rest = remaining.filter((p) => !gs.has(p));
+        for (const sp of scored(g)) rec(ci + 1, rest, [...acc, { courtId: courtIds[ci], sideA: sp.sideA, sideB: sp.sideB }], total + sp.score);
+      }
+    };
+    rec(0, players, [], 0);
+  } else {
+    for (let n = 0; n < 1500; n++) {
+      const sh = [...players];
+      for (let i = sh.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [sh[i], sh[j]] = [sh[j], sh[i]]; }
+      const layout = [];
+      let total = 0;
+      courtIds.forEach((cid, c) => {
+        const sps = scored(sh.slice(c * perCourt, (c + 1) * perCourt));
+        const sp = sps[Math.floor(Math.random() * sps.length)];
+        layout.push({ courtId: cid, sideA: sp.sideA, sideB: sp.sideB });
+        total += sp.score;
+      });
+      out.push({ layout, score: total });
+    }
+  }
+  return out;
+}
+const layoutSignature = (layout) => layout.map((m) => matchSig(m.sideA, m.sideB)).sort().join("#");
 
 // Once the fair "who plays" set is fixed, freely shuffle them across courts
 // and into partner/opponent splits with no fairness constraint — searched
@@ -445,6 +492,38 @@ function assignPairsToCourts(courtIds, pairs, opponentHist, matchHistory) {
     return best;
   }
   return assign(courtIds, pairs).layout;
+}
+
+// Best way to split everyone into partner pairs, searched in full (pruned, and
+// capped for very large groups): fewest repeated partners first, then pairs
+// that last partnered longest ago. Ties are broken at random.
+const pairCountOf = (side, partnerHist) => (side.length === 2 ? partnerHist[pairKey(side[0], side[1])] || 0 : 0);
+function bestPartnerPairs(players, partnerHist) {
+  if (players.length < 2 || players.length % 2) return null;
+  const shuffled = [...players];
+  for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
+  const cost = (a, b) => {
+    const c = partnerHist[pairKey(a, b)] || 0;
+    return c * 1e9 + (c > 0 ? lastTogether(partnerHist, a, b) : 0);
+  };
+  let best = Infinity;
+  let bestPairs = null;
+  let nodes = 0;
+  const rec = (rest, acc, total) => {
+    if (total >= best) return; // strict: the first optimal arrangement found wins (order is already random)
+    if (nodes++ > 300000) return;
+    if (rest.length === 0) { best = total; bestPairs = acc; return; }
+    const [a, ...others] = rest;
+    // cheapest partners for `a` first so a good bound is found early
+    const order = others.map((b, i) => ({ b, i, c: cost(a, b) })).sort((x, y) => x.c - y.c);
+    for (const { b, i, c } of order) {
+      const remaining = others.filter((_, k) => k !== i);
+      rec(remaining, [...acc, [a, b]], total + c);
+    }
+  };
+  rec(shuffled, [], 0);
+  if (!bestPairs) return null;
+  return { pairs: bestPairs, count: bestPairs.reduce((sum, [a, b]) => sum + (partnerHist[pairKey(a, b)] || 0), 0) };
 }
 
 // Builds a complete no-repeat rotation for the current active roster. Rounds
@@ -833,7 +912,25 @@ export function reducer(state, action) {
           shufflePlan = null;
         }
 
-        const layout = noBench && shufflePlan
+        // The stored rotation only offers a handful of fixed rounds, which
+        // can't take games already played in a different pattern into account
+        // (courts that ran out of sync, edits, a rebuilt roster). So before
+        // using its next round, compare it with the best layout a full search
+        // finds; if the search can avoid partner repeats / exact rematches
+        // the rotation round would cause, use the search result instead.
+        let searchedLayout = null;
+        if (noBench && shufflePlan) {
+          const best = bestPartnerPairs(activeIds, partnerHist);
+          const planCount = shufflePlan.rounds[shufflePlan.index].reduce((sum, m) => sum + pairCountOf(m.sideA, partnerHist) + pairCountOf(m.sideB, partnerHist), 0);
+          if (best && planCount > best.count) {
+            searchedLayout = assignPairsToCourts(courtIdList, best.pairs, opponentHist, matchHistory);
+            shufflePlan = null; // rebuilt (and re-checked) on the next reshuffle
+          }
+        }
+
+        const layout = searchedLayout
+          ? searchedLayout
+          : noBench && shufflePlan
           ? shufflePlan.rounds[shufflePlan.index]
           : (() => {
               const playingSet = determineShufflePlayingSet(normalizedUnits, totalRequired);
@@ -1034,6 +1131,105 @@ export function reducer(state, action) {
       units[inUnitId] = { ...units[inUnitId], onCourt: true, missStreak: 0, sits: Math.max(0, (units[inUnitId].sits || 0) - 1) };
 
       return withNextPreview({ ...state, courtsState, units, orderCounter: state.orderCounter + 1 });
+    }
+
+    case "DELETE_GAME": {
+      // Admin-only (enforced in the socket layer). Removes a finished game
+      // from the log and takes its results back out of every standing and
+      // history: games played, points, wins/losses, serve-first count,
+      // partner/opponent/matchup history. Scheduling bookkeeping (sit counts,
+      // who played last) is left alone — those players did sit out and play
+      // when it happened, and the schedule must not jump around.
+      const idx = state.log.findIndex((e) => e.id === action.gameId);
+      if (idx === -1) return state;
+      const old = state.log[idx];
+      const aWon = old.scoreA > old.scoreB;
+      const units = { ...state.units };
+      const undo = (ids, pf, pa, won, isA) => ids.forEach((id) => {
+        const u = units[id];
+        if (!u) return; // unit removed since the game was played
+        units[id] = {
+          ...u,
+          gamesPlayed: Math.max(0, u.gamesPlayed - 1),
+          pointsFor: u.pointsFor - pf, pointsAgainst: u.pointsAgainst - pa,
+          wins: u.wins - (won ? 1 : 0), losses: u.losses - (won ? 0 : 1),
+          firstServes: isA ? Math.max(0, (u.firstServes || 0) - 1) : u.firstServes,
+        };
+      });
+      undo(old.sideA, old.scoreA, old.scoreB, aWon, true);
+      undo(old.sideB, old.scoreB, old.scoreA, !aWon, false);
+
+      const opponentHist = { ...state.opponentHist };
+      old.sideA.forEach((a) => old.sideB.forEach((b) => { const k = pairKey(a, b); opponentHist[k] = Math.max(0, (opponentHist[k] || 0) - 1); }));
+      const log = state.log.filter((e) => e.id !== action.gameId);
+      let partnerHist = { ...state.partnerHist };
+      if (state.mode === "individual") {
+        [old.sideA, old.sideB].forEach((side) => {
+          if (side.length === 2) { const k = pairKey(...side); partnerHist[k] = Math.max(0, (partnerHist[k] || 0) - 1); }
+        });
+        partnerHist = withLastFromLog(partnerHist, log);
+      }
+      const matchHistory = { ...state.matchHistory };
+      const msig = matchSig(old.sideA, old.sideB);
+      matchHistory[msig] = Math.max(0, (matchHistory[msig] || 0) - 1);
+      return withNextPreview({ ...state, units, opponentHist, partnerHist, matchHistory, log });
+    }
+
+    case "SWAP_PLAYERS": {
+      // Manual lineup override that works with no bench: trade two units that
+      // are both in games that haven't been scored yet (same court, either
+      // side, or two different courts). Nobody sits or plays extra, so no
+      // fairness counters move.
+      const { unitId, otherUnitId } = action;
+      if (!unitId || !otherUnitId || unitId === otherUnitId) return state;
+      const find = (id) => {
+        for (const c of state.courtsState) {
+          if (!c.match) continue;
+          for (const side of ["sideA", "sideB"]) {
+            const i = c.match[side].indexOf(id);
+            if (i >= 0) return { courtId: c.id, side, i };
+          }
+        }
+        return null;
+      };
+      const p1 = find(unitId);
+      const p2 = find(otherUnitId);
+      if (!p1 || !p2) return state;
+      const courtsState = state.courtsState.map((c) => {
+        if (!c.match || (c.id !== p1.courtId && c.id !== p2.courtId)) return c;
+        const match = { ...c.match, sideA: [...c.match.sideA], sideB: [...c.match.sideB] };
+        if (c.id === p1.courtId) match[p1.side][p1.i] = otherUnitId;
+        if (c.id === p2.courtId) match[p2.side][p2.i] = unitId;
+        return { ...c, match };
+      });
+      return withNextPreview({ ...state, courtsState });
+    }
+
+    case "RANDOMIZE": {
+      // Re-deal the games currently on the courts (nobody is added or
+      // removed, so sit-outs are untouched): one court, or every court with
+      // a game in progress when no courtId is given. The new lineup is the
+      // best available by the usual rules (no partner repeats, no rematches)
+      // but never the same as what is on the courts now, and ties are broken
+      // at random — so pressing it again deals another one.
+      if (state.phase !== "session") return state;
+      const targets = state.courtsState.filter((c) => c.match && (action.courtId == null || c.id === action.courtId));
+      if (targets.length === 0) return state;
+      const players = targets.flatMap((c) => [...c.match.sideA, ...c.match.sideB]);
+      const courtIds = targets.map((c) => c.id);
+      const current = layoutSignature(targets.map((c) => ({ sideA: c.match.sideA, sideB: c.match.sideB })));
+      const options = listLayouts(courtIds, players, state.mode, state.opponentHist, state.partnerHist, state.matchHistory)
+        .filter((o) => layoutSignature(o.layout) !== current);
+      if (options.length === 0) return state;
+      const bestScore = Math.min(...options.map((o) => o.score));
+      const ties = options.filter((o) => o.score === bestScore);
+      const pick = ties[Math.floor(Math.random() * ties.length)].layout;
+      const oriented = pick.map((m) => orientForServe(m, state.units));
+      const courtsState = state.courtsState.map((c) => {
+        const m = oriented.find((l) => l.courtId === c.id);
+        return m ? { ...c, match: { sideA: m.sideA, sideB: m.sideB, startedAt: c.match.startedAt } } : c;
+      });
+      return withNextPreview({ ...state, courtsState });
     }
 
     case "ADD_UNIT_MIDSESSION": {

@@ -18,6 +18,7 @@ export default function App() {
       <Route path="/s/:slug" element={<GuestSession />} />
       <Route path="/help" element={<Help view="manual" />} />
       <Route path="/help/history" element={<Help view="history" />} />
+      <Route path="/help/scheduling" element={<Help view="scheduling" />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

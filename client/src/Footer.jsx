@@ -31,7 +31,7 @@ export default function Footer() {
   return (
     <div className="pbr-footer">
       <div className="pbr-footer-links">
-        <Link to="/help">User manual</Link> · <Link to="/help/history">Version history</Link>
+        <Link to="/help">User manual</Link> · <Link to="/help/scheduling">How scheduling works</Link> · <Link to="/help/history">Version history</Link>
         {isAdmin && (
           <>
             {" · "}

@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Styles } from "./PickleballApp.jsx";
 import Footer from "./Footer.jsx";
 import { RELEASES } from "./changelog.js";
+import Scheduling from "./Scheduling.jsx";
 import "./help.css";
 
 // In-app user manual (/help) and version history (/help/history).
@@ -137,18 +138,42 @@ function Manual() {
           line rather than being sent to the back.
         </p>
         <Fig name="courts-edit-lineup" alt="Edit lineup mode with drop-downs for each player" caption="Edit lineup" />
+        <p>
+          The drop-downs also list everyone who is already playing (on this court or another). Pick one of them and the two
+          players <strong>trade places</strong>. This works even when nobody is waiting, for example 8 players on 2 courts.
+          Nobody sits out and no counts change.
+        </p>
+
+        <h3 className="pbr-help-h3">Re-dealing the teams (Randomize)</h3>
+        <p>
+          If the teams aren't mixed the way you want, tap <strong>Randomize</strong> on a court to split its four players up
+          differently, or <strong>Randomize all</strong> (with two or more courts) to re-deal every game in progress across
+          all of those courts. The same people keep playing, so nobody's turn to sit is affected. The new teams are the best
+          the app can find (no repeated partners where possible) but never the same as before, and you can tap again for
+          another deal.
+        </p>
 
         <h3 className="pbr-help-h3">How the app decides who sits</h3>
         <p>
           The app counts how many times each person has sat out. Nobody sits twice in a row, and nobody sits a second time
           while someone is still waiting for their first sit. After that it looks at games played, then who has waited
           longest. When two courts finish at different times, a second sit can still come early for someone, because the
-          players on the other court haven't had their turn yet.
+          players on the other court haven't had their turn yet. The full rules are on the{" "}
+          <Link to="/help/scheduling">How scheduling works</Link> page.
         </p>
         <p>
           For partners, it uses every possible pairing before repeating one. When a repeat can't be avoided, it avoids
           replaying the exact same game (the same two teams against each other), and then repeats the pair that played
           together longest ago, so you won't get the same partner in two games in a row.
+        </p>
+        <p>
+          If the game on a court is a <strong>repeat</strong> (the same two teams meeting again), a red{" "}
+          <strong>Repeat of game N</strong> label appears above it, and the Next up line says which game it would repeat.
+        </p>
+        <p>
+          Beside each pair of partners (in "everyone for themselves" sessions) a small number shows how many finished
+          games those two have already played <strong>together as partners</strong>. <strong>0</strong> means a brand-new
+          pairing; a red <strong>1</strong> or more means they have partnered before.
         </p>
         <h3 className="pbr-help-h3">Who serves first</h3>
         <p>
@@ -209,7 +234,7 @@ function Manual() {
       <section className="pbr-card" id="log">
         <h2>Game log and fixing scores</h2>
         <p>
-          The <strong>Log</strong> tab lists every finished game, newest first, with the winners highlighted. At the top you can
+          The <strong>Log</strong> tab lists every finished game, newest first, with its game number and the winners highlighted. At the top you can
           export the session as a <strong>CSV</strong> (for spreadsheets) or a <strong>PDF</strong> (for sharing or printing). Both
           include the session name. The game log in the export also shows whether a game was a <strong>repeat</strong> (the
           same two teams meeting again) and, if so, which earlier game it repeated (the most recent one).
@@ -223,6 +248,11 @@ function Manual() {
         <p>
           Wins, losses and points update everywhere. <strong>Who plays next doesn't change.</strong> Only the host can edit
           scores, and only while the session is still active.
+        </p>
+        <p>
+          <strong>Admins</strong> also see a <strong>Delete game</strong> button while editing a game. It removes the game from
+          the log and takes it out of the standings and partner history (for example a game that was entered just to skip a
+          matchup). Who sits and who plays next doesn't change.
         </p>
         <div className="pbr-help-figs">
           <Fig name="log" alt="The game log with a pencil beside each game" caption="The game log" />
@@ -280,7 +310,7 @@ function Manual() {
         <h2>Quick answers</h2>
         <ul>
           <li><strong>We entered the wrong score.</strong> Log tab, tap the pencil, correct it, Save.</li>
-          <li><strong>The wrong people are on the court.</strong> Tap a name, or use Edit lineup.</li>
+          <li><strong>The wrong people are on the court.</strong> Tap a name, use Edit lineup (you can also trade places with someone on another court), or tap Randomize.</li>
           <li><strong>Someone arrived late.</strong> Queue tab, Add a player mid-session.</li>
           <li><strong>Someone has to leave early.</strong> Queue tab, tap Sit out next to their name.</li>
           <li><strong>A player can't see the session.</strong> Check they used the share link for this session, and that they have a connection.</li>
@@ -344,9 +374,10 @@ export default function Help({ view = "manual" }) {
         </div>
         <nav className="pbr-help-tabs">
           <Link className={"pbr-help-tab" + (view === "manual" ? " active" : "")} to="/help">User manual</Link>
+          <Link className={"pbr-help-tab" + (view === "scheduling" ? " active" : "")} to="/help/scheduling">How scheduling works</Link>
           <Link className={"pbr-help-tab" + (view === "history" ? " active" : "")} to="/help/history">Version history</Link>
         </nav>
-        {view === "history" ? <History /> : <Manual />}
+        {view === "history" ? <History /> : view === "scheduling" ? <Scheduling /> : <Manual />}
       </div>
       <Footer />
     </div>

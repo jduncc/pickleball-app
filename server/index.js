@@ -390,6 +390,7 @@ io.on("connection", (socket) => {
         return;
       }
       role = "owner";
+      socket.data.isAdmin = Boolean(user.is_admin);
     } else if (slug) {
       row = getSessionBySlug(slug);
       if (!row) {
@@ -427,6 +428,11 @@ io.on("connection", (socket) => {
     // client sends.
     if (socket.data.role === "guest" && action.type !== "SUBMIT_SCORE") {
       socket.emit("action_rejected", { reason: "guest_not_allowed" });
+      return;
+    }
+    // Deleting a finished game is limited to admins, even for the host.
+    if (action.type === "DELETE_GAME" && !socket.data.isAdmin) {
+      socket.emit("action_rejected", { reason: "admin_only" });
       return;
     }
     // Starting a brand-new session is now a REST call (POST /api/sessions)

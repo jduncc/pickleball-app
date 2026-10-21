@@ -15,11 +15,31 @@
 
 export const RELEASES = [
   {
+    version: "1.5.0",
+    date: "2026-10-21",
+    changes: [
+      "Fixed: when everyone is playing (for example 8 players on 2 courts), a reshuffle could pair people who had already partnered even though a fresh pairing existed. It now searches every possible pairing first.",
+      "New: Randomize on a court, or Randomize all, re-deals the teams for games in progress.",
+      "New: Edit lineup now works with no one waiting. Pick a player who is already on a court to trade places with them.",
+      "New: Admins can delete a game from the log while editing it.",
+      "New: A game on the court that repeats an earlier matchup is now labelled \"Repeat of game N\", and the Next up line says which game it would repeat.",
+      "New: A small number to the left of each pair of partners shows how many finished games those two have already played together (0 = a fresh pairing, red when it is a repeat).",
+      "New: The Log tab now shows the game number on each game.",
+      "New: A \"How scheduling works\" page explains exactly how the app decides who plays, who sits, who partners whom and who serves first.",
+    ],
+  },
+  {
+    version: "1.4.0",
+    date: "2026-10-21",
+    changes: [
+      "New: The CSV and PDF exports now show which games were repeats (the same two teams meeting again) and which earlier game each one repeated.",
+    ],
+  },
+  {
     version: "1.3.0",
     date: "2026-10-21",
     changes: [
       "New: Serves first. The top team on each court serves first, with a green label, and the app balances who is on top so serving first is shared fairly. When the same two teams meet again, the sides flip.",
-      "New: The CSV and PDF exports now show which games were repeats (the same two teams meeting again) and which earlier game each one repeated.",
       "Fixed: In small groups the app could replay the exact same game (the same two teams against each other) over and over. It now avoids replaying a game before trying other matchups.",
     ],
   },

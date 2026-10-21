@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText, Pencil, Lock, ArrowLeft } from "lucide-react";
+import { Plus, X, Trophy, Users, ListOrdered, History, Minus, Play, Undo2, Check, UserPlus, Coffee, Shuffle, Wifi, WifiOff, Download, ChevronDown, ChevronUp, FileText, Pencil, Lock, ArrowLeft, Trash2 } from "lucide-react";
 import Footer from "./Footer.jsx";
+import { getMe } from "./api.js";
 
 /* ---------------------------------------------------------------------- */
 /* Pure display helpers (server owns the real scheduling logic; these are */
@@ -78,6 +79,39 @@ function repeatOfGames(log) {
     lastSeen.set(key, i + 1);
     return prev;
   });
+}
+
+// Game number of the most recent finished game with this exact matchup (same
+// two teams, either order, either side), or null if it's a fresh matchup.
+function lastGameWithMatchup(log, sideA, sideB) {
+  const key = [[...sideA].sort().join(","), [...sideB].sort().join(",")].sort().join("|");
+  for (let i = log.length - 1; i >= 0; i--) {
+    const k = [[...log[i].sideA].sort().join(","), [...log[i].sideB].sort().join(",")].sort().join("|");
+    if (k === key) return i + 1;
+  }
+  return null;
+}
+
+// How many finished games these two players have played as partners.
+function timesPartnered(log, ids) {
+  if (!ids || ids.length !== 2) return null;
+  const [a, b] = ids;
+  let n = 0;
+  for (const e of log) {
+    for (const side of [e.sideA, e.sideB]) {
+      if (side.length === 2 && side.includes(a) && side.includes(b)) n++;
+    }
+  }
+  return n;
+}
+
+function PairCount({ log, ids, mode }) {
+  if (mode === "fixed") return null;
+  const n = timesPartnered(log, ids);
+  if (n === null) return null;
+  return (
+    <span className={"pbr-pair-count" + (n > 0 ? " repeat" : "")} title={`These two have partnered ${n} time${n === 1 ? "" : "s"} so far`} aria-label={`Partnered ${n} times so far`}>{n}</span>
+  );
 }
 
 function buildSessionCSV(state, title) {
@@ -648,17 +682,37 @@ function CourtsTab({ state, dispatch, role = "owner", ended = false }) {
       {isOwner && !ended && multiCourt && (
         <ShuffleBanner state={state} dispatch={dispatch} allCourtsPlaying={allCourtsPlaying} />
       )}
+      {isOwner && !ended && multiCourt && state.courtsState.some((c) => c.match) && (
+        <div className="pbr-shuffle-banner">
+          <Shuffle size={14} />
+          <span>Teams not mixed the way you want? Re-deal every game in progress.</span>
+          <button
+            className="pbr-btn pbr-btn-ghost pbr-btn-small"
+            onClick={() => { if (confirm("Re-deal the teams on all courts with a game in progress? Everyone keeps playing; only the teams and courts change.")) dispatch({ type: "RANDOMIZE" }); }}
+          >
+            <Shuffle size={14} /> Randomize all
+          </button>
+        </div>
+      )}
       {state.courtsState.map((court) => (
         <div key={court.id} className="pbr-court-card">
           <div className="pbr-court-card-header">
             <CourtLabel court={court} dispatch={dispatch} editable={isOwner && !ended} />
             {isOwner && !ended && court.match && (
-              <button
-                className="pbr-btn pbr-btn-ghost pbr-btn-small"
-                onClick={() => setEditingCourtId(editingCourtId === court.id ? null : court.id)}
-              >
-                {editingCourtId === court.id ? <><Check size={14} /> Done</> : <><Pencil size={14} /> Edit lineup</>}
-              </button>
+              <div className="pbr-court-card-actions">
+                <button
+                  className="pbr-btn pbr-btn-ghost pbr-btn-small"
+                  onClick={() => { if (confirm(`Re-deal the teams for ${court.name || "this court"}? The same four players will be split up differently.`)) dispatch({ type: "RANDOMIZE", courtId: court.id }); }}
+                >
+                  <Shuffle size={14} /> Randomize
+                </button>
+                <button
+                  className="pbr-btn pbr-btn-ghost pbr-btn-small"
+                  onClick={() => setEditingCourtId(editingCourtId === court.id ? null : court.id)}
+                >
+                  {editingCourtId === court.id ? <><Check size={14} /> Done</> : <><Pencil size={14} /> Edit lineup</>}
+                </button>
+              </div>
             )}
           </div>
           {!court.match ? (
@@ -689,20 +743,38 @@ function CourtsTab({ state, dispatch, role = "owner", ended = false }) {
 
 function LineupSlot({ unitId, courtId, state, waitingIds, dispatch }) {
   const unit = state.units[unitId];
+  // Everyone else in a game that hasn't been scored yet (this court or
+  // another) can be traded with, so lineups stay editable with no bench.
+  const playing = [];
+  state.courtsState.forEach((c) => {
+    if (!c.match) return;
+    [...c.match.sideA, ...c.match.sideB].forEach((id) => {
+      if (id !== unitId) playing.push({ id, court: c });
+    });
+  });
   return (
     <select
       className="pbr-lineup-select"
       value={unitId}
       onChange={(e) => {
         const inUnitId = e.target.value;
-        if (inUnitId && inUnitId !== unitId) dispatch({ type: "SWAP_LINEUP", courtId, outUnitId: unitId, inUnitId });
+        if (!inUnitId || inUnitId === unitId) return;
+        if (waitingIds.includes(inUnitId)) dispatch({ type: "SWAP_LINEUP", courtId, outUnitId: unitId, inUnitId });
+        else dispatch({ type: "SWAP_PLAYERS", unitId, otherUnitId: inUnitId });
       }}
     >
       <option value={unitId}>{unit ? unit.name : "?"}</option>
-      {waitingIds.length === 0 ? (
-        <option value="" disabled>— no one waiting —</option>
-      ) : (
-        waitingIds.map((id) => <option key={id} value={id}>{state.units[id].name}</option>)
+      {waitingIds.length > 0 && (
+        <optgroup label="Waiting">
+          {waitingIds.map((id) => <option key={id} value={id}>{state.units[id].name}</option>)}
+        </optgroup>
+      )}
+      {playing.length > 0 && (
+        <optgroup label="Playing now (swap places)">
+          {playing.map(({ id, court }) => (
+            <option key={id} value={id}>{state.units[id] ? state.units[id].name : "?"}{court.id !== courtId ? ` · ${courtLabel(state.courtsState, court.id)}` : ""}</option>
+          ))}
+        </optgroup>
       )}
     </select>
   );
@@ -750,34 +822,43 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch
   const canSubmit = !ended && draft.a !== draft.b;
   const waitingIds = editing ? computeWaitingIds(state.units) : [];
   const nextUp = !editing ? court.nextPreview : null;
+  const repeatOf = lastGameWithMatchup(state.log, sideA, sideB);
+  const nextRepeatOf = nextUp ? lastGameWithMatchup(state.log, nextUp.sideA, nextUp.sideB) : null;
 
   return (
     <div className="pbr-match">
       <div className="pbr-court-svg-wrap"><CourtLines /></div>
+      {repeatOf && <div className="pbr-repeat-tag">Repeat of game {repeatOf}</div>}
       <div className="pbr-serve-tag">Serves first</div>
       <div className="pbr-side pbr-side-a">
-        {editing ? (
-          <div className="pbr-lineup-edit">
-            {sideA.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
-          </div>
-        ) : (
-          <SideNames state={state} ids={sideA} dispatch={dispatch} courtId={court.id} tappable={isOwner && !ended} />
-        )}
+        <div className="pbr-side-main">
+          <PairCount log={state.log} ids={sideA} mode={state.mode} />
+          {editing ? (
+            <div className="pbr-lineup-edit">
+              {sideA.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
+            </div>
+          ) : (
+            <SideNames state={state} ids={sideA} dispatch={dispatch} courtId={court.id} tappable={isOwner && !ended} />
+          )}
+        </div>
         <ScoreStepper value={draft.a} onChange={(v) => setDraft({ ...draft, a: v })} accent="a" disabled={ended} />
       </div>
       <div className="pbr-vs">vs</div>
       <div className="pbr-side pbr-side-b">
-        {editing ? (
-          <div className="pbr-lineup-edit">
-            {sideB.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
-          </div>
-        ) : (
-          <SideNames state={state} ids={sideB} dispatch={dispatch} courtId={court.id} tappable={isOwner && !ended} />
-        )}
+        <div className="pbr-side-main">
+          <PairCount log={state.log} ids={sideB} mode={state.mode} />
+          {editing ? (
+            <div className="pbr-lineup-edit">
+              {sideB.map((unitId) => <LineupSlot key={unitId} unitId={unitId} courtId={court.id} state={state} waitingIds={waitingIds} dispatch={dispatch} />)}
+            </div>
+          ) : (
+            <SideNames state={state} ids={sideB} dispatch={dispatch} courtId={court.id} tappable={isOwner && !ended} />
+          )}
+        </div>
         <ScoreStepper value={draft.b} onChange={(v) => setDraft({ ...draft, b: v })} accent="b" disabled={ended} />
       </div>
       {editing ? (
-        <p className="pbr-hint pbr-lineup-hint">Pick a name in either box to swap in a waiting player, then tap Done above.</p>
+        <p className="pbr-hint pbr-lineup-hint">Pick a name in any box to swap in a waiting player, or to trade places with someone already playing (this court or another). Then tap Done above.</p>
       ) : !ended ? (
         <>
           {isOwner && <p className="pbr-hint pbr-tap-hint">Tap a name if someone needs to sit this game out.</p>}
@@ -790,7 +871,7 @@ function CourtMatch({ court, state, draft, setDraft, onSubmit, editing, dispatch
         <div className="pbr-next-up">
           <p>
             <strong>Next up:</strong> {sideLabel(state.units, nextUp.sideA)} vs {sideLabel(state.units, nextUp.sideB)}
-            {nextUp.repeat ? " (repeat)" : ""}
+            {nextUp.repeat || nextRepeatOf ? (nextRepeatOf ? ` (repeat of game ${nextRepeatOf})` : " (repeat)") : ""}
           </p>
           {nextUp.sittingOut && nextUp.sittingOut.length > 0 && (
             <p className="pbr-next-up-sitting">Sitting out: {nextUp.sittingOut.map((id) => unitName(state.units, id)).join(", ")}</p>
@@ -917,6 +998,16 @@ function LogTab({ state, dispatch, role = "owner", ended = false, title = null, 
   const canEdit = isOwner && !ended;
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({ a: "", b: "" });
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!canEdit) return;
+    getMe().then((me) => setIsAdmin(Boolean(me && me.authenticated && me.isAdmin))).catch(() => {});
+  }, [canEdit]);
+  const deleteGame = (e) => {
+    if (!confirm(`Delete this game (${sideLabel(state.units, e.sideA)} ${e.scoreA}–${e.scoreB} ${sideLabel(state.units, e.sideB)})? Its score comes out of the standings and partner history. This can't be undone.`)) return;
+    dispatch({ type: "DELETE_GAME", gameId: e.id });
+    setEditingId(null);
+  };
 
   const startEdit = (e) => { setEditingId(e.id); setEditDraft({ a: String(e.scoreA), b: String(e.scoreB) }); };
   const cancelEdit = () => setEditingId(null);
@@ -945,11 +1036,12 @@ function LogTab({ state, dispatch, role = "owner", ended = false, title = null, 
         </div>
         {entries.length === 0 && <p className="pbr-empty">No games logged yet.</p>}
         <ul className="pbr-log-list">
-          {entries.map((e) => {
+          {entries.map((e, idx) => {
+            const gameNo = state.log.length - idx;
             const aWon = e.scoreA > e.scoreB;
             return (
               <li key={e.id} className={"pbr-log-row" + (canEdit ? " pbr-log-row-editable" : "")}>
-                <span className="pbr-log-court">{courtLabel(state.courtsState, e.courtId)}{typeof e.durationMs === "number" ? ` · ${formatDuration(e.durationMs)}` : ""}</span>
+                <span className="pbr-log-court"><strong className="pbr-log-num">Game {gameNo}</strong><br />{courtLabel(state.courtsState, e.courtId)}{typeof e.durationMs === "number" ? ` · ${formatDuration(e.durationMs)}` : ""}</span>
                 <span className={"pbr-log-side" + (aWon ? " won" : "")}>{sideLabel(state.units, e.sideA)}</span>
                 <span className="pbr-log-score">{e.scoreA} – {e.scoreB}</span>
                 <span className={"pbr-log-side" + (!aWon ? " won" : "")}>{sideLabel(state.units, e.sideB)}</span>
@@ -963,6 +1055,7 @@ function LogTab({ state, dispatch, role = "owner", ended = false, title = null, 
                     <input className="pbr-log-edit-input" inputMode="numeric" aria-label="Score for second side" value={editDraft.b} onChange={(ev) => setEditDraft((d) => ({ ...d, b: ev.target.value }))} onKeyDown={(ev) => { if (ev.key === "Enter") saveEdit(); if (ev.key === "Escape") cancelEdit(); }} />
                     <button className="pbr-btn pbr-btn-primary pbr-btn-small" disabled={!draftValid} onClick={saveEdit}><Check size={14} /> Save</button>
                     <button className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={cancelEdit}><X size={14} /> Cancel</button>
+                    {isAdmin && <button className="pbr-btn pbr-btn-ghost pbr-btn-small pbr-btn-danger" onClick={() => deleteGame(e)}><Trash2 size={14} /> Delete game</button>}
                     {draftA !== null && draftB !== null && draftA === draftB && <span className="pbr-log-edit-hint">Scores can't tie</span>}
                   </div>
                 )}
@@ -1151,6 +1244,7 @@ export function Styles() {
       .pbr-court-card-header .pbr-court-label { margin-bottom: 0; }
       .pbr-court-card-header .pbr-court-label-input { margin-bottom: 0; }
       .pbr-court-card-header .pbr-btn-small { margin-top: 0; flex-shrink: 0; }
+      .pbr-court-card-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
       .pbr-court-label { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--chalk-dim); margin-bottom: 10px; }
       .pbr-court-label-btn { background: none; border: none; padding: 0; cursor: pointer; text-align: left; border-bottom: 1px dashed transparent; }
       .pbr-court-label-btn:hover { border-bottom-color: var(--chalk-dim); }
@@ -1170,9 +1264,13 @@ export function Styles() {
       .pbr-court-lines-svg { width: 100%; height: 100%; }
       .pbr-side { position: relative; display: flex; justify-content: space-between; align-items: center; padding: 10px 4px; }
       .pbr-side-a { border-left: 3px solid var(--green); padding-left: 12px; }
+      .pbr-repeat-tag { display: inline-block; margin: 0 0 6px 15px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: var(--coral); border: 1px solid var(--coral); }
       .pbr-serve-tag { position: relative; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--green); padding: 2px 0 0 15px; }
       .pbr-side-b { border-left: 3px solid var(--coral); padding-left: 12px; }
       .pbr-side-names { font-size: 15px; font-weight: 600; }
+      .pbr-side-main { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+      .pbr-pair-count { flex-shrink: 0; min-width: 22px; height: 22px; padding: 0 5px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 12px; font-weight: 800; color: var(--yellow); border: 1px solid var(--yellow); }
+      .pbr-pair-count.repeat { color: var(--coral); border-color: var(--coral); background: rgba(232, 101, 79, 0.14); }
       .pbr-name-tap { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; border-bottom: 1px dashed transparent; }
       .pbr-name-tap:hover, .pbr-name-tap:active { border-bottom-color: currentColor; opacity: 0.85; }
       .pbr-lineup-edit { display: flex; flex-direction: column; gap: 6px; flex: 1; margin-right: 10px; }
@@ -1218,7 +1316,8 @@ export function Styles() {
       .pbr-log-edit-input { width: 56px; text-align: center; font-size: 16px; font-weight: 700; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--navy-2); background: var(--navy); color: var(--chalk); }
       .pbr-log-editor .pbr-btn-small { margin-top: 0; }
       .pbr-log-edit-hint { color: var(--coral); font-size: 12px; }
-      .pbr-log-court { color: var(--chalk-dim); font-size: 11px; }
+      .pbr-log-court { color: var(--chalk-dim); font-size: 11px; line-height: 1.35; }
+      .pbr-log-num { color: var(--chalk); font-size: 12px; }
       .pbr-log-side { text-align: right; }
       .pbr-log-side.won { color: var(--yellow); font-weight: 700; }
       .pbr-log-side:nth-child(2) { text-align: left; }
