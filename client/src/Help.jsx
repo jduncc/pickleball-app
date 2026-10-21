@@ -159,7 +159,7 @@ function Manual() {
           while someone is still waiting for their first sit. After that it looks at games played, then who has waited
           longest. When two courts finish at different times, a second sit can still come early for someone, because the
           players on the other court haven't had their turn yet. The full rules are on the{" "}
-          <Link to="/help/scheduling">How scheduling works</Link> page.
+          <Link to="/help/scheduling">How scheduling works</Link> page, which you can also print or save as a PDF.
         </p>
         <p>
           For partners, it uses every possible pairing before repeating one. When a repeat can't be avoided, it avoids

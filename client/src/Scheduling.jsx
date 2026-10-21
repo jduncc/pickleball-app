@@ -1,4 +1,5 @@
 import React from "react";
+import { Printer } from "lucide-react";
 
 // "How scheduling works" (/help/scheduling): the plain-language rules the
 // server uses to decide who plays, who sits, who partners whom and who serves
@@ -12,6 +13,15 @@ export const SCHEDULING_DOC_VERSION = "1.5.0";
 export default function Scheduling() {
   return (
     <>
+      <div className="pbr-help-actions">
+        <button type="button" className="pbr-btn pbr-btn-ghost pbr-btn-small" onClick={() => window.print()}>
+          <Printer size={14} /> Print or save as PDF
+        </button>
+      </div>
+      <div className="pbr-print-only pbr-print-title">
+        <h1>Pickleball Round Robin: How scheduling works</h1>
+        <p>Describes release {SCHEDULING_DOC_VERSION} · printed {new Date().toLocaleDateString()}</p>
+      </div>
       <section className="pbr-card">
         <h2>How the app decides who plays next</h2>
         <p>
@@ -25,7 +35,7 @@ export default function Scheduling() {
           Finally it decides which team is on top (serves first). Everything below describes those steps in the order they
           are applied: the first rule that separates two options wins, and later rules only break ties.
         </p>
-        <p className="dim">This page describes release {SCHEDULING_DOC_VERSION}.</p>
+        <p className="dim pbr-screen-only">This page describes release {SCHEDULING_DOC_VERSION}.</p>
         <ul className="pbr-help-toc">
           <li><a href="#who">1. Who plays and who sits</a></li>
           <li><a href="#teams">2. How teams are picked</a></li>

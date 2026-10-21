@@ -15,6 +15,13 @@
 
 export const RELEASES = [
   {
+    version: "1.6.0",
+    date: "2026-10-21",
+    changes: [
+      "New: The \"How scheduling works\" page has a Print or save as PDF button, and prints cleanly on a light background without the menus.",
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-10-21",
     changes: [

@@ -46,3 +46,31 @@
 
 .pbr-footer a { color: inherit; }
 .pbr-footer-links { margin-bottom: 4px; font-size: 12px; }
+
+/* Print / save as PDF (used by the "How scheduling works" page, and fine for
+   the manual too): light theme, no navigation, no footer. */
+.pbr-print-only { display: none; }
+.pbr-help-actions { display: flex; justify-content: flex-end; }
+.pbr-help-actions .pbr-btn-small { margin-top: 0; }
+
+@media print {
+  @page { margin: 14mm; }
+  html, body { background: #fff !important; }
+  html body .pbr-app {
+    --navy: #fff; --navy-2: #fff; --navy-3: #c9c9c9;
+    --chalk: #111; --chalk-dim: #444;
+    --yellow: #7a5200; --green: #0b6b4a; --coral: #b3261e;
+    background: #fff; color: #111; max-width: none; min-height: 0;
+  }
+  .pbr-help-top, .pbr-help-tabs, .pbr-help-actions, .pbr-footer { display: none !important; }
+  .pbr-screen-only { display: none !important; }
+  .pbr-print-only { display: block; }
+  .pbr-print-title h1 { font-size: 20px; margin: 0; }
+  .pbr-print-title p { margin: 4px 0 0; color: #444; font-size: 12px; }
+  .pbr-help { padding: 0; gap: 10px; }
+  .pbr-help .pbr-card { background: none; border: 1px solid #bbb; border-radius: 6px; padding: 12px 14px; box-shadow: none; }
+  .pbr-help h2, .pbr-help-h3 { break-after: avoid; }
+  .pbr-help li, .pbr-help-note, .pbr-help-fig { break-inside: avoid; }
+  .pbr-help a { color: inherit; text-decoration: none; }
+  .pbr-help-fig img { box-shadow: none; }
+}
