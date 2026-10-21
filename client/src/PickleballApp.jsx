@@ -66,6 +66,20 @@ function csvEscape(val) {
 }
 function csvLine(cells) { return cells.map(csvEscape).join(","); }
 
+// For each game in the log: null if it's the first time those two teams met,
+// otherwise the game number of the MOST RECENT earlier game with the same
+// matchup (same two teams against each other, in either order or on either
+// side). Used by the exports.
+function repeatOfGames(log) {
+  const lastSeen = new Map();
+  return log.map((e, i) => {
+    const key = [[...e.sideA].sort().join(","), [...e.sideB].sort().join(",")].sort().join("|");
+    const prev = lastSeen.has(key) ? lastSeen.get(key) : null;
+    lastSeen.set(key, i + 1);
+    return prev;
+  });
+}
+
 function buildSessionCSV(state, title) {
   const who = state.mode === "fixed" ? "Team" : "Player";
   const lines = [];
@@ -81,13 +95,14 @@ function buildSessionCSV(state, title) {
   });
   lines.push("");
   lines.push("GAME LOG");
-  lines.push(csvLine(["Game #", "Court", "Side A", "Score A", "Score B", "Side B", "Winner", "Duration", "Who sat out"]));
+  lines.push(csvLine(["Game #", "Court", "Side A", "Score A", "Score B", "Side B", "Winner", "Duration", "Repeat game?", "Repeat of game #", "Who sat out"]));
+  const repeats = repeatOfGames(state.log);
   state.log.forEach((e, i) => {
     const aWon = e.scoreA > e.scoreB;
     const aNames = sideLabel(state.units, e.sideA);
     const bNames = sideLabel(state.units, e.sideB);
     const sittingOutNames = (e.sittingOut || []).map((id) => unitName(state.units, id)).join(", ");
-    lines.push(csvLine([i + 1, courtLabel(state.courtsState, e.courtId), aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs), sittingOutNames]));
+    lines.push(csvLine([i + 1, courtLabel(state.courtsState, e.courtId), aNames, e.scoreA, e.scoreB, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs), repeats[i] ? "Yes" : "No", repeats[i] || "", sittingOutNames]));
   });
   return lines.join("\n");
 }
@@ -209,14 +224,15 @@ function buildSessionPDF(state, title) {
   doc.setTextColor(...PDF_NAVY);
   doc.text("Game Log", marginX, afterY);
 
+  const repeatOfGame = repeatOfGames(state.log);
   autoTable(doc, {
     startY: afterY + 8,
-    head: [["Game", "Court", "Side A", "Score", "Side B", "Winner", "Duration"]],
+    head: [["Game", "Court", "Side A", "Score", "Side B", "Winner", "Duration", "Repeat of"]],
     body: state.log.map((e, i) => {
       const aWon = e.scoreA > e.scoreB;
       const aNames = sideLabel(state.units, e.sideA);
       const bNames = sideLabel(state.units, e.sideB);
-      return [i + 1, courtLabel(state.courtsState, e.courtId), aNames, `${e.scoreA} \u2013 ${e.scoreB}`, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs)];
+      return [i + 1, courtLabel(state.courtsState, e.courtId), aNames, `${e.scoreA} \u2013 ${e.scoreB}`, bNames, aWon ? aNames : bNames, formatDuration(e.durationMs), repeatOfGame[i] ? `Game ${repeatOfGame[i]}` : ""];
     }),
     theme: "striped",
     headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: "bold" },

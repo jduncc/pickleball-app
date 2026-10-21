@@ -211,7 +211,8 @@ function Manual() {
         <p>
           The <strong>Log</strong> tab lists every finished game, newest first, with the winners highlighted. At the top you can
           export the session as a <strong>CSV</strong> (for spreadsheets) or a <strong>PDF</strong> (for sharing or printing). Both
-          include the session name.
+          include the session name. The game log in the export also shows whether a game was a <strong>repeat</strong> (the
+          same two teams meeting again) and, if so, which earlier game it repeated (the most recent one).
         </p>
         <h3 className="pbr-help-h3">Fixing a wrong score</h3>
         <ol>
