@@ -15,6 +15,13 @@
 
 export const RELEASES = [
   {
+    version: "1.7.0",
+    date: "2026-10-21",
+    changes: [
+      "New: Admins can correct a score or delete a game in a session that has already ended. Ended sessions stay locked for everyone else.",
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-10-21",
     changes: [

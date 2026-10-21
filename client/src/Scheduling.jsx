@@ -163,7 +163,7 @@ export default function Scheduling() {
           <li><strong>Tap a name / Edit lineup, swapping in a waiting player.</strong> The player coming out counts as a sit and plays next; the player going in has a sit taken back. Nothing already played changes.</li>
           <li><strong>Edit lineup, trading places with someone already playing.</strong> Nobody sits or plays extra; no counts change.</li>
           <li><strong>Randomize / Randomize all.</strong> Re-deals the teams for games in progress using the section 2 rules, never giving the same lineup back. The same people keep playing, so no sit counts change.</li>
-          <li><strong>Edit score.</strong> Only the standings change. Who plays next does not.</li>
+          <li><strong>Edit score.</strong> Only the standings change. Who plays next does not. (Admins can also do this after a session has ended.)</li>
           <li><strong>Undo last.</strong> Puts the game back on the court and reverses its results and its partner and opponent history. The next matchup may then be chosen differently.</li>
           <li><strong>Delete game (admin).</strong> Removes the game from the log, standings and partner and opponent history. Sit counts and the waiting order are left alone.</li>
           <li><strong>Sit out / come back, add or remove a player, add or remove a court.</strong> Sit counts are adjusted as in section 1, and empty courts are filled right away (unless a shuffle is waiting).</li>

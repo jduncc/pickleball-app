@@ -995,14 +995,15 @@ export function StandingsTab({ state }) {
 function LogTab({ state, dispatch, role = "owner", ended = false, title = null, onBack, onEndSession }) {
   const isOwner = role === "owner";
   const entries = [...state.log].reverse();
-  const canEdit = isOwner && !ended;
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({ a: "", b: "" });
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
-    if (!canEdit) return;
+    if (!isOwner) return;
     getMe().then((me) => setIsAdmin(Boolean(me && me.authenticated && me.isAdmin))).catch(() => {});
-  }, [canEdit]);
+  }, [isOwner]);
+  // Hosts can fix scores while a session is active; after it ends only admins can.
+  const canEdit = isOwner && (!ended || isAdmin);
   const deleteGame = (e) => {
     if (!confirm(`Delete this game (${sideLabel(state.units, e.sideA)} ${e.scoreA}–${e.scoreB} ${sideLabel(state.units, e.sideB)})? Its score comes out of the standings and partner history. This can't be undone.`)) return;
     dispatch({ type: "DELETE_GAME", gameId: e.id });

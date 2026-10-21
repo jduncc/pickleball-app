@@ -423,8 +423,13 @@ io.on("connection", (socket) => {
     const row = getSessionById(sessionId);
     if (!row) return; // deleted out from under this socket
     if (row.ended_at) {
-      socket.emit("action_rejected", { reason: "session_ended" });
-      return;
+      // A finished session is locked for everyone except admins correcting the
+      // record: fixing a score or deleting a game still works for them.
+      const adminFix = socket.data.isAdmin && (action.type === "EDIT_SCORE" || action.type === "DELETE_GAME");
+      if (!adminFix) {
+        socket.emit("action_rejected", { reason: "session_ended" });
+        return;
+      }
     }
     // Guests connected via the public share link may only submit scores —
     // every other control (shuffle, roster, lineup swaps, ending the

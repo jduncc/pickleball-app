@@ -254,6 +254,10 @@ function Manual() {
           the log and takes it out of the standings and partner history (for example a game that was entered just to skip a
           matchup). Who sits and who plays next doesn't change.
         </p>
+        <p>
+          Admins can also <strong>edit scores and delete games after a session has ended</strong>, so a mistake spotted later
+          can still be fixed. Everyone else sees an ended session as locked.
+        </p>
         <div className="pbr-help-figs">
           <Fig name="log" alt="The game log with a pencil beside each game" caption="The game log" />
           <Fig name="log-edit" alt="Editing the score of a finished game" caption="Editing a score" />
