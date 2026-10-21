@@ -60,3 +60,7 @@ Screenshots only use demo data and the fake `host@example.com` login (the
 - `server/test_admin.mjs` expects a server on port 3995, `server/test_multisession.mjs`
   on 3996. Both start from an empty `DATA_DIR` with `TEST_AUTH_BYPASS=1`.
 - `TEST_AUTH_BYPASS=1` must never be set in production.
+
+## Committing
+
+Pushes to `main` build and deploy automatically, and CI commits a version bump back, so always `git pull` (or fetch and rebase) before pushing.
